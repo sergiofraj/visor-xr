@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor XR · Ferruz</title>
+<style>
+  html,body{margin:0;height:100%;background:#1b1b1f;color:#eee;font-family:system-ui,Segoe UI,Arial,sans-serif;overflow:hidden}
+  #hud{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:5}
+  #hud h1{font-size:18px;margin:0 12px 0 0;color:#e30613}
+  button{background:#e30613;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer}
+  button.sec{background:#3a3a42}
+  #info{position:absolute;bottom:12px;left:12px;right:12px;font-size:14px;opacity:.85;z-index:5}
+  #load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;z-index:4;pointer-events:none}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"./lib/three.module.js",
+  "three/addons/":"./lib/addons/"
+}}
+</script>
+</head>
+<body>
+<div id="hud">
+  <a href="index.html" style="color:#fff;text-decoration:none;font-size:15px;margin-right:6px">← Catálogo</a><h1>FERRUZ · Visor XR</h1>
+  <button id="btnAR">Entrar en realidad mixta</button>
+  <button id="btnScale" class="sec">Escala: 1:1</button>
+  <button id="btnRot" class="sec">Girar 90°</button>
+</div>
+<div id="load">Cargando modelo…</div>
+<div id="info">
+  En las Quest 3: pulsa «Entrar en realidad mixta», apunta al suelo con el mando y pulsa el gatillo para colocar el modelo.
+  Gatillo de nuevo = recolocar · Joystick derecho = girar · Botón A = cambiar escala 1:1 / 1:10.
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const params = new URLSearchParams(location.search);
+const MODEL_URL = 'models/' + (params.get('m') || 'piso-movil') + '.glb';
+const EMBED = params.has('embed');
+if (EMBED) { document.getElementById('hud').style.display='none'; document.getElementById('info').style.display='none'; }
+const SCALES = [1, 0.1];
+let scaleIdx = 0;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 500);
+camera.position.set(12, 6, 12);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.4));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(10, 20, 8);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xffffff, 1.0);
+fill.position.set(-12, 8, -10);
+scene.add(fill);
+
+// Fondo y suelo solo en el navegador del PC
+const grid = new THREE.GridHelper(40, 40, 0x666666, 0x333333);
+scene.add(grid);
+scene.background = new THREE.Color(0x1b1b1f);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.5, 0);
+controls.update();
+
+// Pivote: el modelo se apoya en el suelo, centrado en X/Z
+const pivot = new THREE.Group();
+scene.add(pivot);
+
+const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
+loader.load(MODEL_URL, (gltf) => {
+  const m = gltf.scene;
+  // SolidWorks exporta sin colores: material de aluminio
+  const alu = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.55, roughness: 0.42, side: THREE.DoubleSide });
+  m.traverse(o => { if (o.isMesh) o.material = alu; });
+  const box = new THREE.Box3().setFromObject(m);
+  const c = box.getCenter(new THREE.Vector3());
+  m.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
+  pivot.add(m);
+  const size = box.getSize(new THREE.Vector3());
+  document.getElementById('load').remove(); window.__loaded = true;
+  document.getElementById('info').insertAdjacentText('beforeend',
+    ` · Dimensiones: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`);
+  const d = Math.max(size.x, size.z);
+  camera.position.set(d * 0.8, d * 0.4, d * 0.8);
+  controls.target.set(0, size.y / 2, 0);
+  controls.update();
+  if (EMBED) { controls.autoRotate = true; controls.autoRotateSpeed = 0.8; }
+}, (e) => {
+  if (e.total) document.getElementById('load').textContent = `Cargando modelo… ${Math.round(e.loaded / e.total * 100)} %`;
+}, (err) => {
+  document.getElementById('load').textContent = 'No se pudo cargar el modelo';
+  console.error(err);
+});
+
+function setScale(i) {
+  scaleIdx = i;
+  pivot.scale.setScalar(SCALES[i]);
+  document.getElementById('btnScale').textContent = `Escala: ${SCALES[i] === 1 ? '1:1' : '1:10'}`;
+}
+function rotate(rad) { pivot.rotation.y += rad; }
+document.getElementById('btnScale').onclick = () => setScale((scaleIdx + 1) % SCALES.length);
+document.getElementById('btnRot').onclick = () => rotate(Math.PI / 2);
+
+// ---------- Realidad mixta (WebXR immersive-ar con hit-test) ----------
+const reticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xe30613 })
+);
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
+scene.add(reticle);
+
+let hitSource = null, placed = false;
+const controller = renderer.xr.getController(0);
+const controller2 = renderer.xr.getController(1);
+scene.add(controller, controller2);
+function onSelect() {
+  if (!reticle.visible) return;
+  const p = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+  pivot.position.copy(p);
+  pivot.visible = true;
+  placed = true;
+}
+controller.addEventListener('select', onSelect);
+controller2.addEventListener('select', onSelect);
+
+const btnAR = document.getElementById('btnAR');
+async function startAR() {
+  if (!navigator.xr) { alert('Este navegador no soporta WebXR. Ábrelo en el navegador de las Meta Quest.'); return; }
+  const arOK = await navigator.xr.isSessionSupported('immersive-ar');
+  const mode = arOK ? 'immersive-ar' : 'immersive-vr';
+  const session = await navigator.xr.requestSession(mode, {
+    requiredFeatures: ['local-floor'],
+    optionalFeatures: ['hit-test']
+  });
+  renderer.xr.setReferenceSpaceType('local-floor');
+  await renderer.xr.setSession(session);
+  scene.background = null; grid.visible = false;
+  if (arOK && session.enabledFeatures?.includes('hit-test') !== false) {
+    try {
+      const viewer = await session.requestReferenceSpace('viewer');
+      hitSource = await session.requestHitTestSource({ space: viewer });
+    } catch (e) { hitSource = null; }
+  }
+  if (!hitSource) { pivot.position.set(0, 0, -3); placed = true; }
+  else { pivot.visible = false; placed = false; }
+  session.addEventListener('end', () => {
+    hitSource = null; reticle.visible = false; pivot.visible = true;
+    pivot.position.set(0, 0, 0);
+    scene.background = new THREE.Color(0x1b1b1f); grid.visible = true;
+  });
+}
+btnAR.onclick = startAR;
+
+// Joystick para girar y botón A para escala
+let lastA = false, lastStick = 0;
+function handleGamepads() {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  for (const src of session.inputSources) {
+    const gp = src.gamepad; if (!gp) continue;
+    const x = gp.axes[2] ?? 0;
+    if (Math.abs(x) > 0.6 && performance.now() - lastStick > 250) {
+      rotate(x > 0 ? -Math.PI / 12 : Math.PI / 12); lastStick = performance.now();
+    }
+    const a = gp.buttons[4]?.pressed;
+    if (src.handedness === 'right') {
+      if (a && !lastA) setScale((scaleIdx + 1) % SCALES.length);
+      lastA = !!a;
+    }
+  }
+}
+
+renderer.setAnimationLoop((t, frame) => {
+  if (frame && hitSource) {
+    const ref = renderer.xr.getReferenceSpace();
+    const hits = frame.getHitTestResults(hitSource);
+    if (hits.length) {
+      reticle.visible = true;
+      reticle.matrix.fromArray(hits[0].getPose(ref).transform.matrix);
+    } else reticle.visible = false;
+  }
+  handleGamepads();
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

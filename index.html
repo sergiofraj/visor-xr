@@ -3,199 +3,194 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Visor XR · Ferruz</title>
+<title>Ferruz · Catálogo de semirremolques de aluminio</title>
 <style>
-  html,body{margin:0;height:100%;background:#1b1b1f;color:#eee;font-family:system-ui,Segoe UI,Arial,sans-serif;overflow:hidden}
-  #hud{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:5}
-  #hud h1{font-size:18px;margin:0 12px 0 0;color:#e30613}
-  button{background:#e30613;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer}
-  button.sec{background:#3a3a42}
-  #info{position:absolute;bottom:12px;left:12px;right:12px;font-size:14px;opacity:.85;z-index:5}
-  #load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;z-index:4;pointer-events:none}
+  :root{--red:#e30613;--dark:#16161a;--ink:#222;--mute:#6b6b75;--line:#e6e6ea;--bg:#f6f6f8}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:inherit}
+  header{background:var(--dark);color:#fff;position:sticky;top:0;z-index:10}
+  .bar{max-width:1240px;margin:auto;display:flex;align-items:center;gap:18px;padding:12px 20px}
+  .bar img{height:38px}
+  .bar nav{margin-left:auto;display:flex;gap:18px;font-size:15px}
+  .bar nav a{text-decoration:none;opacity:.85}.bar nav a:hover{opacity:1;color:#ff4d57}
+  .hero{background:linear-gradient(90deg,rgba(22,22,26,.92) 35%,rgba(22,22,26,.35)),url(https://www.ferruz.com/wordpress2019/wp-content/uploads/2024/08/Piso_movil_13-2.jpg) center/cover;color:#fff}
+  .hero .in{max-width:1240px;margin:auto;padding:70px 20px 60px}
+  .hero h1{font-size:40px;margin:0 0 12px;max-width:640px;line-height:1.15}
+  .hero h1 span{color:var(--red)}
+  .hero p{font-size:18px;max-width:600px;opacity:.9;line-height:1.5}
+  .facts{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}
+  .facts div{border-left:3px solid var(--red);padding-left:12px}
+  .facts b{display:block;font-size:24px}
+  .facts small{opacity:.8}
+  main{max-width:1240px;margin:auto;padding:36px 20px 60px}
+  h2{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--mute);margin:0 0 24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:20px}
+  .card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;transition:.2s;text-decoration:none;display:flex;flex-direction:column}
+  .card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+  .card .ph{aspect-ratio:4/3;background:#ddd center/cover;position:relative}
+  .badge{position:absolute;top:10px;left:10px;background:var(--red);color:#fff;font-size:12px;font-weight:700;padding:4px 9px;border-radius:20px}
+  .card .tx{padding:14px 16px 18px}
+  .card h3{margin:0 0 6px;font-size:19px}
+  .card p{margin:0;color:var(--mute);font-size:14px;line-height:1.45}
+  /* ficha */
+  #ficha{display:none}
+  .back{display:inline-block;margin-bottom:16px;text-decoration:none;color:var(--red);font-weight:600}
+  .top{display:grid;grid-template-columns:1.4fr 1fr;gap:28px;align-items:start}
+  .stage{background:#1b1b1f;border-radius:12px;overflow:hidden;aspect-ratio:16/10;position:relative}
+  .stage iframe,.stage img{width:100%;height:100%;border:0;object-fit:cover;display:block}
+  .stage .tag{position:absolute;left:12px;bottom:12px;background:rgba(0,0,0,.6);color:#fff;font-size:13px;padding:5px 10px;border-radius:6px}
+  .info h1{margin:0 0 10px;font-size:32px}
+  .info p{line-height:1.6;color:#444}
+  .info ul{padding-left:18px;line-height:1.7;color:#444}
+  .btn{display:inline-flex;align-items:center;gap:8px;background:var(--red);color:#fff;text-decoration:none;padding:13px 20px;border-radius:9px;font-weight:600;margin:8px 8px 0 0;border:0;font-size:15px;cursor:pointer}
+  .btn.sec{background:#2c2c33}
+  .xr{background:#fff3f3;border:1px solid #ffd2d5;border-radius:10px;padding:14px 16px;margin-top:16px;font-size:14px;line-height:1.5}
+  .gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:28px}
+  .gal img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;cursor:zoom-in;background:#ddd}
+  #lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:50;cursor:zoom-out}
+  #lb img{max-width:94vw;max-height:90vh;border-radius:6px}
+  .docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-top:14px}
+  .docs a{background:#fff;border-radius:10px;padding:14px 16px;text-decoration:none;border-left:4px solid var(--red);box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .docs small{display:block;color:var(--mute)}
+  footer{background:var(--dark);color:#bbb;font-size:14px}
+  footer .in{max-width:1240px;margin:auto;padding:28px 20px;display:flex;gap:30px;flex-wrap:wrap;justify-content:space-between}
+  footer b{color:#fff}
+  @media(max-width:860px){.top{grid-template-columns:1fr}.hero h1{font-size:30px}.bar nav{display:none}}
 </style>
-<script type="importmap">
-{"imports":{
-  "three":"./lib/three.module.js",
-  "three/addons/":"./lib/addons/"
-}}
-</script>
 </head>
 <body>
-<div id="hud">
-  <h1>FERRUZ · Visor XR</h1>
-  <button id="btnAR">Entrar en realidad mixta</button>
-  <button id="btnScale" class="sec">Escala: 1:1</button>
-  <button id="btnRot" class="sec">Girar 90°</button>
+<header><div class="bar">
+  <a href="#"><img src="https://www.ferruz.com/wordpress2019/wp-content/uploads/2019/07/logo_grupo_blanco.png" alt="Ferruz Industrial Group"></a>
+  <nav><a href="#">Catálogo</a><a href="#documentacion">Documentación</a><a href="#contacto">Contacto</a></nav>
+</div></header>
+
+<div id="home">
+  <section class="hero"><div class="in">
+    <h1>Semirremolques y chasis de <span>aluminio</span></h1>
+    <p>Diseñados y fabricados en Zaragoza por Ferruz Industrial Group. Bañeras basculantes, piso móvil, chasis y carrocerías especiales adaptadas a cada cliente.</p>
+    <div class="facts">
+      <div><b>+65 años</b><small>de experiencia industrial</small></div>
+      <div><b>2 plantas</b><small>de producción en Zaragoza</small></div>
+      <div><b>20–34 m³</b><small>bañeras basculantes de 2 y 3 ejes</small></div>
+    </div>
+  </div></section>
+
+  <main>
+    <h2>Catálogo de semirremolques</h2>
+    <p class="sub">Selecciona un producto para ver su ficha y galería. Los modelos marcados con <b style="color:var(--red)">3D · XR</b> se pueden ver a tamaño real con gafas Meta Quest.</p>
+    <div class="grid" id="grid"></div>
+
+    <h2 id="documentacion" style="margin-top:50px">Documentación técnica</h2>
+    <div class="docs">
+      <a href="https://www.ferruz.com/catalogos/SMR/presentacion_general_SMR.pdf" target="_blank" rel="noopener">Presentación general<small>Chasis y semirremolques · PDF</small></a>
+      <a href="https://www.ferruz.com/catalogos/SMR/detalle_productos_SMR.pdf" target="_blank" rel="noopener">Detalle de productos<small>Catálogo SMR · PDF</small></a>
+      <a href="https://www.ferruz.com/catalogos/SMR/MANUAL_DE_USO_SMR.pdf" target="_blank" rel="noopener">Manual de uso<small>Semirremolques · PDF</small></a>
+      <a href="https://www.ferruz.com/catalogos/SMR/NOTA_INFORMATIVA_44_toneladas.pdf" target="_blank" rel="noopener">Nota informativa 44 t<small>Normativa · PDF</small></a>
+      <a href="https://www.ferruz.com/catalogos/SMR/certificado_uca.pdf" target="_blank" rel="noopener">Certificado UCA<small>PDF</small></a>
+    </div>
+  </main>
 </div>
-<div id="load">Cargando modelo…</div>
-<div id="info">
-  En las Quest 3: pulsa «Entrar en realidad mixta», apunta al suelo con el mando y pulsa el gatillo para colocar el modelo.
-  Gatillo de nuevo = recolocar · Joystick derecho = girar · Botón A = cambiar escala 1:1 / 1:10.
-</div>
-<script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const MODEL_URL = 'model.glb';
-const SCALES = [1, 0.1];
-let scaleIdx = 0;
+<main id="ficha">
+  <a class="back" href="#">← Volver al catálogo</a>
+  <div class="top">
+    <div class="stage" id="stage"></div>
+    <div class="info" id="info"></div>
+  </div>
+  <div class="gal" id="gal"></div>
+</main>
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.xr.enabled = true;
-document.body.appendChild(renderer.domElement);
+<footer id="contacto"><div class="in">
+  <div><b>Oleohidráulica Ferruz, S.A.</b><br>C/ Cobalto, 31 · Pol. Ind. PTR<br>50720 Cartuja Baja, Zaragoza (España)</div>
+  <div><b>Contacto</b><br>Tel. +34 976 410 221<br><a href="https://www.ferruz.com/contacto/" target="_blank" rel="noopener">www.ferruz.com/contacto</a></div>
+  <div><b>Ferruz Industrial Group</b><br>Cilindros hidráulicos · Ejes · Semirremolques<br>Recolectores de residuos · Neumáticos</div>
+</div></footer>
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 500);
-camera.position.set(12, 6, 12);
+<div id="lb"><img alt=""></div>
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.4));
-const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-sun.position.set(10, 20, 8);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0xffffff, 1.0);
-fill.position.set(-12, 8, -10);
-scene.add(fill);
+<script>
+const U = 'https://www.ferruz.com/wordpress2019/wp-content/uploads/';
+const g = (dir, names) => names.map(n => U + dir + '/' + n);
 
-// Fondo y suelo solo en el navegador del PC
-const grid = new THREE.GridHelper(40, 40, 0x666666, 0x333333);
-scene.add(grid);
-scene.background = new THREE.Color(0x1b1b1f);
+const PRODUCTS = [
+  { id:'piso-movil', name:'Piso Móvil', model:'piso-movil',
+    short:'Semirremolque de aluminio con suelo móvil para cargas a granel de gran volumen.',
+    desc:'Semirremolque de aluminio equipado con sistema de piso móvil, que descarga desplazando la carga hacia atrás sin necesidad de bascular. Pensado para transportar grandes volúmenes con seguridad, también en zonas donde bascular no es posible.',
+    points:['Estructura y caja en aluminio','Descarga horizontal mediante piso móvil, sin basculación','Varias opciones de puerta trasera, incluidas versiones estancas','Configuraciones de lona y accesos a medida'],
+    imgs:g('2024/08',['Piso_movil_13-2.jpg','piso_movil_01-1024x575.jpg','piso_movil_02-1-1024x674.jpg','piso_movil_03-1024x768.jpg','piso_movil_04-1024x647.jpg','piso_movil_05-1024x768.jpg','piso_movil_06-1024x768.jpg','piso_movil_07.jpg','piso_movil_08.jpg','piso_movil_09.jpg','piso_movil_10.jpg','Piso_movil_11.jpg','Piso_movil_12-2.jpg','Piso_movil_14-2.jpg','Piso_movil_15.jpg'])},
+  { id:'banera-de-lamas', name:'Bañera de lamas',
+    short:'Bañera basculante de aluminio con laterales lisos de lamas.',
+    desc:'Semirremolque basculante de aluminio con caja de laterales lisos, para obra pública y carga general. Disponible en configuraciones de 2 y 3 ejes.',
+    points:['Bañera basculante en aluminio','Laterales lisos de lamas','Capacidades de 20 a 34 m³ en la gama de bañeras','Versiones de 2 y 3 ejes'],
+    imgs:g('2024/08',['lamas_05-1024x740.jpg','lamas_02-1024x682.jpg','lamas_03-1024x768.jpg','lamas_04-1024x696.jpg','lamas_06.jpg','lamas_07-2.jpg','lamas_08.jpg','lamas_09.jpg','lamas_10.jpg','lamas_11.jpg','lamas_12.jpg','lamas_13.jpg','lamas_14.jpg','lamas_15.jpg','lamas_16.jpg','lamas_17.jpg','lamas_18.jpg','lamas_19.jpg'])},
+  { id:'banera-de-costillas', name:'Bañera de costillas',
+    short:'Bañera basculante de aluminio con laterales reforzados con costillas.',
+    desc:'Semirremolque basculante de aluminio con laterales de costillas, una carrocería robusta pensada para cargas exigentes en obra pública y áridos.',
+    points:['Bañera basculante en aluminio','Laterales con costillas de refuerzo','Capacidades de 20 a 34 m³ en la gama de bañeras','Versiones de 2 y 3 ejes'],
+    imgs:g('2024/08',['costillas_09-1024x768.jpg','costillas_01-1-1024x768.jpg','costillas_02-1024x768.jpg','costillas_03-1024x575.jpg','costillas_04-1024x768.jpg','costillas_06-1024x799.jpg','costillas_08-1024x717.jpg','costillas_10-1024x768.jpg','costillas_11-1024x768.jpg','costillas_14.jpg','costillas_15.jpg','costillas_17.jpg','costillas_18.jpg','costillas_19.jpg','costillas_20.jpg','costillas_21.jpg','costillas_22.jpg','costillas_23.jpg'])},
+  { id:'banera-omega', name:'Bañera omega',
+    short:'Bañera basculante de aluminio con perfil omega.',
+    desc:'Semirremolque basculante de aluminio con caja de perfil omega, para obra pública y transporte de carga general.',
+    points:['Bañera basculante en aluminio','Caja con perfil omega','Capacidades de 20 a 34 m³ en la gama de bañeras','Versiones de 2 y 3 ejes'],
+    imgs:g('2024/08',['omega_01-1024x768.jpg','omega_02.jpg','omega_03.jpg','omega_05.jpg','omega_06.jpg','omega_07.jpg','omega_08.jpg','omega_09.jpg','Omega_10-1.jpg','Omega_11-1.jpg','Omega_12.jpg','Omega_13.jpg','Omega_14.jpg'])},
+  { id:'chasis', name:'Chasis',
+    short:'Chasis y plataformas de aluminio adaptables a cualquier carrocería.',
+    desc:'Chasis y plataformas industriales de aluminio en varios modelos, adaptables a cualquier tipo de carrocería o aplicación. Incluye versiones portacontenedores para 20, 30 y 40 pies, solos o combinados.',
+    points:['Chasis de aluminio adaptable a cualquier carrocería','Plataformas industriales a medida del cliente','Portacontenedores de 20, 30 y 40 pies'],
+    imgs:g('2024/08',['chasis_01-1-1024x768.jpg','chasis_02.jpg','chasis_03.jpg','Chasis_04.jpg','chasis_05.jpg','chasis_06.jpg','chasis_07.jpg','chasis_08.jpg'])},
+  { id:'piso-movil-rsu', name:'Piso Móvil RSU',
+    short:'Piso móvil de aluminio para el transporte de residuos sólidos urbanos.',
+    desc:'Versión del semirremolque de piso móvil preparada para el transporte de residuos sólidos urbanos (RSU), con descarga horizontal sin basculación.',
+    points:['Semirremolque de aluminio con piso móvil','Preparado para residuos sólidos urbanos','Opciones de puerta trasera estanca para evitar fugas'],
+    imgs:g('2024/09',['p_movil_RSU_01.jpg','p_movil_RSU_02.jpg','p_movil_RSU_03.jpg','p_movil_RSU_04.jpg','p_movil_RSU_05.jpg','p_movil_RSU_06.jpg','p_movil_RSU_07.jpg','p_movil_RSU_08.jpg'])},
+  { id:'duo-trailer', name:'Dúo Tráiler',
+    short:'Configuración Dúo Tráiler en aluminio.',
+    desc:'Conjunto Dúo Tráiler fabricado en aluminio, para combinaciones de vehículos de mayor capacidad.',
+    points:['Fabricación en aluminio','Configuración Dúo Tráiler'],
+    imgs:g('2024/09',['DUO-TRAILER_04.jpg','DUO-TRAILER_01-3.jpg','DUO-TRAILER_02.jpg','DUO-TRAILER_03.jpg'])},
+  { id:'remolques', name:'Remolques',
+    short:'Remolques de aluminio.',
+    desc:'Remolques fabricados en aluminio por Ferruz.',
+    points:['Fabricación en aluminio'],
+    imgs:g('2024/09',['remolques_01.jpg','remolques_02.jpg','remolques_03.jpg','remolques_04.jpg'])},
+  { id:'especiales', name:'Especiales',
+    short:'Carrocerías y semirremolques especiales a medida.',
+    desc:'Desarrollos especiales en aluminio diseñados según las necesidades de cada cliente y aplicación.',
+    points:['Diseño a medida','Fabricación en aluminio'],
+    imgs:g('2024/08',['foto-portada-especiales-1.jpg','especiales_01-1024x768.jpg','especiales_02-1024x768.jpg','especiales_03.jpg','especiales_04.jpg','especiales_05.jpg','especiales_06.jpg','especiales_08.jpg','especiales_09.jpg','especiales_10.jpg','especiales_12.jpg','especiales_15.jpg','especiales_17.jpg','especiales_18.jpg','especiales_19.jpg'])}
+];
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 1.5, 0);
-controls.update();
+const grid = document.getElementById('grid');
+grid.innerHTML = PRODUCTS.map(p => `
+  <a class="card" href="#${p.id}">
+    <div class="ph" style="background-image:url('${p.imgs[0]}')">${p.model ? '<span class="badge">3D · XR</span>' : ''}</div>
+    <div class="tx"><h3>${p.name}</h3><p>${p.short}</p></div>
+  </a>`).join('');
 
-// Pivote: el modelo se apoya en el suelo, centrado en X/Z
-const pivot = new THREE.Group();
-scene.add(pivot);
-
-const loader = new GLTFLoader();
-loader.setMeshoptDecoder(MeshoptDecoder);
-loader.load(MODEL_URL, (gltf) => {
-  const m = gltf.scene;
-  // SolidWorks exporta sin colores: material de aluminio
-  const alu = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.55, roughness: 0.42, side: THREE.DoubleSide });
-  m.traverse(o => { if (o.isMesh) o.material = alu; });
-  const box = new THREE.Box3().setFromObject(m);
-  const c = box.getCenter(new THREE.Vector3());
-  m.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
-  pivot.add(m);
-  const size = box.getSize(new THREE.Vector3());
-  document.getElementById('load').remove(); window.__loaded = true;
-  document.getElementById('info').insertAdjacentText('beforeend',
-    ` · Dimensiones: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`);
-  const d = Math.max(size.x, size.z);
-  camera.position.set(d * 0.8, d * 0.4, d * 0.8);
-  controls.target.set(0, size.y / 2, 0);
-  controls.update();
-}, (e) => {
-  if (e.total) document.getElementById('load').textContent = `Cargando modelo… ${Math.round(e.loaded / e.total * 100)} %`;
-}, (err) => {
-  document.getElementById('load').textContent = 'No se pudo cargar el modelo';
-  console.error(err);
-});
-
-function setScale(i) {
-  scaleIdx = i;
-  pivot.scale.setScalar(SCALES[i]);
-  document.getElementById('btnScale').textContent = `Escala: ${SCALES[i] === 1 ? '1:1' : '1:10'}`;
+function show() {
+  const id = location.hash.slice(1);
+  const p = PRODUCTS.find(x => x.id === id);
+  const home = document.getElementById('home'), ficha = document.getElementById('ficha');
+  if (!p) { home.style.display = ''; ficha.style.display = 'none'; document.getElementById('stage').innerHTML=''; if (id) document.getElementById(id)?.scrollIntoView(); return; }
+  home.style.display = 'none'; ficha.style.display = 'block'; scrollTo(0, 0);
+  document.getElementById('stage').innerHTML = p.model
+    ? `<iframe src="visor.html?m=${p.model}&embed" title="Modelo 3D ${p.name}"></iframe><span class="tag">Modelo 3D · arrastra para girar</span>`
+    : `<img src="${p.imgs[0]}" alt="${p.name}">`;
+  document.getElementById('info').innerHTML = `
+    <h1>${p.name}</h1><p>${p.desc}</p>
+    <ul>${p.points.map(t => `<li>${t}</li>`).join('')}</ul>
+    ${p.model ? `<a class="btn" href="visor.html?m=${p.model}">Ver a tamaño real (Meta Quest)</a>` : ''}
+    <a class="btn sec" href="https://www.ferruz.com/contacto/" target="_blank" rel="noopener">Solicitar información</a>
+    ${p.model ? `<div class="xr"><b>Realidad mixta:</b> abre esta página en el navegador de las Meta Quest 3, pulsa «Ver a tamaño real» y luego «Entrar en realidad mixta». Apunta al suelo y pulsa el gatillo para colocar el semirremolque.</div>` : ''}`;
+  document.getElementById('gal').innerHTML = p.imgs.map(s => `<img src="${s}" loading="lazy" alt="${p.name}">`).join('');
 }
-function rotate(rad) { pivot.rotation.y += rad; }
-document.getElementById('btnScale').onclick = () => setScale((scaleIdx + 1) % SCALES.length);
-document.getElementById('btnRot').onclick = () => rotate(Math.PI / 2);
+addEventListener('hashchange', show); show();
 
-// ---------- Realidad mixta (WebXR immersive-ar con hit-test) ----------
-const reticle = new THREE.Mesh(
-  new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: 0xe30613 })
-);
-reticle.matrixAutoUpdate = false;
-reticle.visible = false;
-scene.add(reticle);
-
-let hitSource = null, placed = false;
-const controller = renderer.xr.getController(0);
-const controller2 = renderer.xr.getController(1);
-scene.add(controller, controller2);
-function onSelect() {
-  if (!reticle.visible) return;
-  const p = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-  pivot.position.copy(p);
-  pivot.visible = true;
-  placed = true;
-}
-controller.addEventListener('select', onSelect);
-controller2.addEventListener('select', onSelect);
-
-const btnAR = document.getElementById('btnAR');
-async function startAR() {
-  if (!navigator.xr) { alert('Este navegador no soporta WebXR. Ábrelo en el navegador de las Meta Quest.'); return; }
-  const arOK = await navigator.xr.isSessionSupported('immersive-ar');
-  const mode = arOK ? 'immersive-ar' : 'immersive-vr';
-  const session = await navigator.xr.requestSession(mode, {
-    requiredFeatures: ['local-floor'],
-    optionalFeatures: ['hit-test']
-  });
-  renderer.xr.setReferenceSpaceType('local-floor');
-  await renderer.xr.setSession(session);
-  scene.background = null; grid.visible = false;
-  if (arOK && session.enabledFeatures?.includes('hit-test') !== false) {
-    try {
-      const viewer = await session.requestReferenceSpace('viewer');
-      hitSource = await session.requestHitTestSource({ space: viewer });
-    } catch (e) { hitSource = null; }
-  }
-  if (!hitSource) { pivot.position.set(0, 0, -3); placed = true; }
-  else { pivot.visible = false; placed = false; }
-  session.addEventListener('end', () => {
-    hitSource = null; reticle.visible = false; pivot.visible = true;
-    pivot.position.set(0, 0, 0);
-    scene.background = new THREE.Color(0x1b1b1f); grid.visible = true;
-  });
-}
-btnAR.onclick = startAR;
-
-// Joystick para girar y botón A para escala
-let lastA = false, lastStick = 0;
-function handleGamepads() {
-  const session = renderer.xr.getSession();
-  if (!session) return;
-  for (const src of session.inputSources) {
-    const gp = src.gamepad; if (!gp) continue;
-    const x = gp.axes[2] ?? 0;
-    if (Math.abs(x) > 0.6 && performance.now() - lastStick > 250) {
-      rotate(x > 0 ? -Math.PI / 12 : Math.PI / 12); lastStick = performance.now();
-    }
-    const a = gp.buttons[4]?.pressed;
-    if (src.handedness === 'right') {
-      if (a && !lastA) setScale((scaleIdx + 1) % SCALES.length);
-      lastA = !!a;
-    }
-  }
-}
-
-renderer.setAnimationLoop((t, frame) => {
-  if (frame && hitSource) {
-    const ref = renderer.xr.getReferenceSpace();
-    const hits = frame.getHitTestResults(hitSource);
-    if (hits.length) {
-      reticle.visible = true;
-      reticle.matrix.fromArray(hits[0].getPose(ref).transform.matrix);
-    } else reticle.visible = false;
-  }
-  handleGamepads();
-  renderer.render(scene, camera);
-});
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+const lb = document.getElementById('lb');
+document.getElementById('gal').addEventListener('click', e => { if (e.target.tagName === 'IMG') { lb.firstChild.src = e.target.src; lb.style.display = 'flex'; } });
+lb.onclick = () => lb.style.display = 'none';
 </script>
 </body>
 </html>
