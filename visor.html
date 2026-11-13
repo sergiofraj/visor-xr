@@ -90,7 +90,7 @@ loader.load(MODEL_URL, (gltf) => {
   const size = box.getSize(new THREE.Vector3());
   document.getElementById('load').remove(); window.__loaded = true;
   document.getElementById('info').insertAdjacentText('beforeend',
-    ` · Dimensiones: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} m`);
+    ` · Largo × ancho × alto: ${size.x.toFixed(2)} × ${size.z.toFixed(2)} × ${size.y.toFixed(2)} m`);
   const d = Math.max(size.x, size.z);
   camera.position.set(d * 0.8, d * 0.4, d * 0.8);
   controls.target.set(0, size.y / 2, 0);
