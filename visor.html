@@ -37,6 +37,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const params = new URLSearchParams(location.search);
 const MODEL_URL = 'models/' + (params.get('m') || 'piso-movil') + '.glb';
@@ -55,16 +56,33 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 500);
 camera.position.set(12, 6, 12);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x555555, 2.4));
-const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-sun.position.set(10, 20, 8);
-scene.add(sun);
-const fill = new THREE.DirectionalLight(0xffffff, 1.0);
-fill.position.set(-12, 8, -10);
-scene.add(fill);
+// Render fotorrealista: tone mapping + reflejos de entorno
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;   // sombra estática: se calcula una vez (rendimiento en Quest)
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.9;
 
-// Fondo y suelo solo en el navegador del PC
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+const sun = new THREE.DirectionalLight(0xfff4e5, 2.4);
+sun.position.set(8, 18, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.02;
+scene.add(sun, sun.target);
+
+// Suelo que solo recibe sombra (funciona también sobre el passthrough)
+const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+  new THREE.ShadowMaterial({ opacity: 0.45 }));
+shadowFloor.receiveShadow = true;
+
+// Fondo y rejilla solo en el navegador del PC
 const grid = new THREE.GridHelper(40, 40, 0x666666, 0x333333);
+grid.position.y = -0.002;
 scene.add(grid);
 scene.background = new THREE.Color(0x1b1b1f);
 
@@ -80,15 +98,21 @@ const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 loader.load(MODEL_URL, (gltf) => {
   const m = gltf.scene;
-  // SolidWorks exporta sin colores: material de aluminio
-  const alu = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.55, roughness: 0.42, side: THREE.DoubleSide });
-  m.traverse(o => { if (o.isMesh) o.material = alu; });
+  // Materiales por pieza (aluminio, neumático, llanta, acero, zincado, plástico) vienen en el modelo
+  m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material.side = THREE.DoubleSide; } });
   const box = new THREE.Box3().setFromObject(m);
   const c = box.getCenter(new THREE.Vector3());
   m.position.sub(new THREE.Vector3(c.x, box.min.y, c.z));
   pivot.add(m);
   const size = box.getSize(new THREE.Vector3());
-  document.getElementById('load').remove(); window.__loaded = true;
+  // Sombra sobre el suelo
+  shadowFloor.scale.set(size.x * 1.6, 1, size.z * 3);
+  pivot.add(shadowFloor);
+  const R = Math.max(size.x, size.z) * 0.7;
+  Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 0.5, far: 60 });
+  sun.shadow.camera.updateProjectionMatrix();
+  renderer.shadowMap.needsUpdate = true;
+  document.getElementById('load').remove(); window.__loaded = true; window.__scene = scene; window.__view = (p, t) => { camera.position.set(...p); controls.target.set(...t); controls.update(); };
   document.getElementById('info').insertAdjacentText('beforeend',
     ` · Largo × ancho × alto: ${size.x.toFixed(2)} × ${size.z.toFixed(2)} × ${size.y.toFixed(2)} m`);
   const d = Math.max(size.x, size.z);
@@ -103,12 +127,19 @@ loader.load(MODEL_URL, (gltf) => {
   console.error(err);
 });
 
+function updateShadow() {
+  sun.target.position.copy(pivot.position);
+  sun.position.copy(pivot.position).add(new THREE.Vector3(8, 18, 6));
+  sun.target.updateMatrixWorld();
+  renderer.shadowMap.needsUpdate = true;
+}
 function setScale(i) {
   scaleIdx = i;
   pivot.scale.setScalar(SCALES[i]);
   document.getElementById('btnScale').textContent = `Escala: ${SCALES[i] === 1 ? '1:1' : '1:10'}`;
+  updateShadow();
 }
-function rotate(rad) { pivot.rotation.y += rad; }
+function rotate(rad) { pivot.rotation.y += rad; updateShadow(); }
 document.getElementById('btnScale').onclick = () => setScale((scaleIdx + 1) % SCALES.length);
 document.getElementById('btnRot').onclick = () => rotate(Math.PI / 2);
 
@@ -131,6 +162,7 @@ function onSelect() {
   pivot.position.copy(p);
   pivot.visible = true;
   placed = true;
+  updateShadow();
 }
 controller.addEventListener('select', onSelect);
 controller2.addEventListener('select', onSelect);
@@ -153,11 +185,11 @@ async function startAR() {
       hitSource = await session.requestHitTestSource({ space: viewer });
     } catch (e) { hitSource = null; }
   }
-  if (!hitSource) { pivot.position.set(0, 0, -3); placed = true; }
+  if (!hitSource) { pivot.position.set(0, 0, -3); placed = true; updateShadow(); }
   else { pivot.visible = false; placed = false; }
   session.addEventListener('end', () => {
     hitSource = null; reticle.visible = false; pivot.visible = true;
-    pivot.position.set(0, 0, 0);
+    pivot.position.set(0, 0, 0); updateShadow();
     scene.background = new THREE.Color(0x1b1b1f); grid.visible = true;
   });
 }
