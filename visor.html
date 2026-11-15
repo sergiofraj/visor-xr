@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Visor XR · Ferruz</title>
 <style>
@@ -38,9 +39,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { ensureKey, fetchDecrypted } from './lib/gate.js';
 
 const params = new URLSearchParams(location.search);
-const MODEL_URL = 'models/' + (params.get('m') || 'piso-movil') + '.glb';
+const MODEL_URL = 'models/' + (params.get('m') || 'piso-movil').replace(/[^a-z0-9-]/gi, '') + '.glb.enc';
 const EMBED = params.has('embed');
 if (EMBED) { document.getElementById('hud').style.display='none'; document.getElementById('info').style.display='none'; }
 const SCALES = [1, 0.1];
@@ -96,7 +98,7 @@ scene.add(pivot);
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
-loader.load(MODEL_URL, (gltf) => {
+function onModel(gltf) {
   const m = gltf.scene;
   // Materiales por pieza (aluminio, neumático, llanta, acero, zincado, plástico) vienen en el modelo
   m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.material.side = THREE.DoubleSide; } });
@@ -120,12 +122,21 @@ loader.load(MODEL_URL, (gltf) => {
   controls.target.set(0, size.y / 2, 0);
   controls.update();
   if (EMBED) { controls.autoRotate = true; controls.autoRotateSpeed = 0.8; }
-}, (e) => {
-  if (e.total) document.getElementById('load').textContent = `Cargando modelo… ${Math.round(e.loaded / e.total * 100)} %`;
-}, (err) => {
-  document.getElementById('load').textContent = 'No se pudo cargar el modelo';
-  console.error(err);
-});
+}
+// Modelo cifrado: se pide la contraseña (si no está guardada), se descarga y se descifra en el navegador
+(async () => {
+  try {
+    await ensureKey('app/check.enc');
+    const buf = await fetchDecrypted(MODEL_URL, (got, total) => {
+      if (total) document.getElementById('load').textContent = `Cargando modelo… ${Math.round(got / total * 100)} %`;
+    });
+    document.getElementById('load').textContent = 'Preparando modelo…';
+    loader.parse(buf, '', onModel, (err) => { throw err; });
+  } catch (err) {
+    document.getElementById('load').textContent = 'No se pudo cargar el modelo';
+    console.error(err);
+  }
+})();
 
 function updateShadow() {
   sun.target.position.copy(pivot.position);
