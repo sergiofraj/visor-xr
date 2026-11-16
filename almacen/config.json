@@ -1,0 +1,17 @@
+{
+  "_nota": "Medidas en metros. Estimadas a partir de las fotos: sustituir por las medidas reales.",
+  "niveles": ["A", "B", "C", "D", "E", "F", "G"],
+  "cotaLarguero": { "B": 1.00, "C": 1.70, "D": 2.40, "E": 3.10, "F": 3.90, "G": 4.65 },
+  "altoUltimoNivel": 1.30,
+  "altoMontante": 6.00,
+  "cantoLarguero": 0.12,
+  "anchoVano": 2.70,
+  "huecosPorVano": 3,
+  "anchoMontante": 0.10,
+  "fondo": 1.10,
+  "separacionEspalda": 0.25,
+  "estanterias": [
+    { "id": "32", "posiciones": 15, "origen": [0, 0],    "eje": [1, 0], "haciaFondo": [0, 1] },
+    { "id": "31", "posiciones": 15, "origen": [0, 2.45], "eje": [1, 0], "haciaFondo": [0, -1] }
+  ]
+}
