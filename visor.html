@@ -29,9 +29,10 @@
   <button id="btnRot" class="sec">Girar 90°</button>
 </div>
 <div id="load">Cargando modelo…</div>
+<div id="pieza" style="display:none;position:absolute;right:12px;top:64px;max-width:380px;background:rgba(20,20,24,.92);border-left:4px solid #e30613;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.45;z-index:6"></div>
 <div id="info">
   En las Quest 3: pulsa «Entrar en realidad mixta», apunta al suelo con el mando y pulsa el gatillo para colocar el modelo.
-  Gatillo de nuevo = recolocar · Joystick derecho = girar · Botón A = cambiar escala 1:1 / 1:10.
+  Gatillo de nuevo = recolocar · Joystick derecho = girar · Botón A = escala 1:1 / 1:10 · Botón B = modo identificar piezas (rayo rojo: apunta y aprieta el gatillo). En el PC: haz clic en una pieza para ver su referencia.
 </div>
 <script type="module">
 import * as THREE from 'three';
@@ -122,6 +123,7 @@ function onModel(gltf) {
   controls.target.set(0, size.y / 2, 0);
   controls.update();
   if (EMBED) { controls.autoRotate = true; controls.autoRotateSpeed = 0.8; }
+  modelRoot = m; loadParts();
 }
 // Modelo cifrado: se pide la contraseña (si no está guardada), se descarga y se descifra en el navegador
 (async () => {
@@ -167,7 +169,8 @@ let hitSource = null, placed = false;
 const controller = renderer.xr.getController(0);
 const controller2 = renderer.xr.getController(1);
 scene.add(controller, controller2);
-function onSelect() {
+function onSelect(ev) {
+  if (mode === 'id') { pickFromController(ev.target); return; }
   if (!reticle.visible) return;
   const p = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
   pivot.position.copy(p);
@@ -207,7 +210,7 @@ async function startAR() {
 btnAR.onclick = startAR;
 
 // Joystick para girar y botón A para escala
-let lastA = false, lastStick = 0;
+let lastA = false, lastB = false, lastStick = 0;
 function handleGamepads() {
   const session = renderer.xr.getSession();
   if (!session) return;
@@ -221,15 +224,143 @@ function handleGamepads() {
     if (src.handedness === 'right') {
       if (a && !lastA) setScale((scaleIdx + 1) % SCALES.length);
       lastA = !!a;
+      const b = gp.buttons[5]?.pressed;
+      if (b && !lastB) setMode(mode === 'id' ? 'colocar' : 'id');
+      lastB = !!b;
     }
   }
 }
+
+// ---------- Identificación de piezas (referencia de la lista de materiales) ----------
+const MODEL_NAME = (params.get('m') || 'piso-movil').replace(/[^a-z0-9-]/gi, '');
+let PARTS = null, BOM = null, modelRoot = null, mode = 'colocar', hl = null, label = null;
+const triCache = new WeakMap();
+const ray = new THREE.Raycaster();
+const tmpM = new THREE.Matrix4();
+async function loadParts() {
+  try {
+    const j = JSON.parse(new TextDecoder().decode(await fetchDecrypted('models/' + MODEL_NAME + '.parts.json.enc')));
+    PARTS = j.parts; BOM = j.bom;
+  } catch (e) { console.warn('Sin referencias de piezas', e); }
+}
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function partInfo(pid) {
+  const codes = (PARTS && PARTS[pid]) || [];
+  const own = codes[0] || '?';
+  const e = BOM && BOM[own];
+  const anc = codes.slice(1).filter((c) => BOM && BOM[c]);
+  const conj = anc[0];
+  const n3d = PARTS ? PARTS.filter((p) => p[0] === own).length : 0;
+  return {
+    code: own,
+    desc: e ? e.d : 'No figura en la lista de materiales',
+    inBom: !!e,
+    seccion: e ? e.s : '',
+    qBom: e ? e.q : null,
+    n3d,
+    conj: conj ? { code: conj, desc: BOM[conj].d } : null,
+  };
+}
+function fmtQ(q) { return q == null ? '' : (Math.round(q * 100) / 100).toString().replace('.', ','); }
+function showPanel(i) {
+  const el = document.getElementById('pieza');
+  if (!i) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `<div style="color:#ff4d57;font-weight:700;font-size:16px">${esc(i.code)}</div>
+    <div style="margin:2px 0 8px">${esc(i.desc)}</div>
+    ${i.inBom ? `<div style="opacity:.8">Sección: ${esc(i.seccion)} · Cant. en lista: ${fmtQ(i.qBom)} · En el 3D: ${i.n3d}</div>`
+              : `<div style="opacity:.8;color:#ffb347">Pieza del modelo 3D que no aparece en la lista de materiales · En el 3D: ${i.n3d}</div>`}
+    ${i.conj ? `<div style="opacity:.8;margin-top:4px">Conjunto: ${esc(i.conj.code)} · ${esc(i.conj.desc)}</div>` : ''}
+    <div style="opacity:.55;margin-top:6px;font-size:12px">Clic en otra pieza para cambiar · clic en el vacío para cerrar</div>`;
+}
+function makeLabel(i) {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 300;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(20,20,24,0.92)'; x.fillRect(0, 0, 1024, 300);
+  x.fillStyle = '#e30613'; x.fillRect(0, 0, 14, 300);
+  x.fillStyle = '#ff4d57'; x.font = 'bold 56px system-ui,Arial'; x.fillText(i.code, 40, 72);
+  x.fillStyle = '#fff'; x.font = '40px system-ui,Arial';
+  const words = i.desc.split(' '); let line = '', y = 135;
+  for (const w of words) { if (x.measureText(line + w).width > 950) { x.fillText(line, 40, y); line = ''; y += 48; if (y > 190) break; } line += w + ' '; }
+  if (y <= 190) x.fillText(line, 40, y);
+  x.fillStyle = '#bbb'; x.font = '34px system-ui,Arial';
+  x.fillText(i.conj ? `Conjunto ${i.conj.code}` + (i.inBom ? ` · Cant. ${fmtQ(i.qBom)}` : '') : (i.inBom ? `Cant. ${fmtQ(i.qBom)}` : 'No está en la lista de materiales'), 40, 275);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(0.9, 0.264, 1); sp.renderOrder = 20;
+  return sp;
+}
+function clearPick() {
+  if (hl) { hl.parent.remove(hl); hl.geometry.dispose(); hl = null; }
+  if (label) { scene.remove(label); label.material.map.dispose(); label = null; }
+  showPanel(null);
+}
+function highlight(mesh, pid) {
+  const g = mesh.geometry, idx = g.index, uv = g.attributes.uv;
+  let tris = triCache.get(g);
+  if (!tris) {
+    tris = new Int32Array(idx.count / 3);
+    for (let t = 0; t < tris.length; t++) tris[t] = Math.floor(uv.getX(idx.getX(t * 3)));
+    triCache.set(g, tris);
+  }
+  const sel = [];
+  for (let t = 0; t < tris.length; t++) if (tris[t] === pid) sel.push(idx.getX(t * 3), idx.getX(t * 3 + 1), idx.getX(t * 3 + 2));
+  const ng = new THREE.BufferGeometry();
+  ng.setAttribute('position', g.attributes.position); ng.setIndex(sel);
+  hl = new THREE.Mesh(ng, new THREE.MeshBasicMaterial({ color: 0xff2030, transparent: true, opacity: 0.6, depthTest: false }));
+  hl.renderOrder = 10; mesh.add(hl);
+}
+function pick(raycaster, showLabelAt) {
+  clearPick();
+  if (!modelRoot) return;
+  const hit = raycaster.intersectObject(modelRoot, true).find((h) => h.object.isMesh && h.object.geometry.attributes.uv && h.face);
+  if (!hit) return;
+  const pid = Math.floor(hit.object.geometry.attributes.uv.getX(hit.face.a));
+  highlight(hit.object, pid);
+  const i = partInfo(pid);
+  showPanel(i);
+  if (showLabelAt) {
+    label = makeLabel(i);
+    const cam = renderer.xr.getCamera();
+    const dir = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld).sub(hit.point).normalize();
+    label.position.copy(hit.point).addScaledVector(dir, 0.25).add(new THREE.Vector3(0, 0.25, 0));
+    scene.add(label);
+  }
+}
+function pickFromController(ctrl) {
+  tmpM.identity().extractRotation(ctrl.matrixWorld);
+  ray.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
+  ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+  pick(ray, true);
+}
+// Rayo de los mandos (rojo en modo identificar)
+const laserMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+for (const c of [controller, controller2]) {
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), laserMat);
+  l.scale.z = 8; c.add(l);
+}
+function setMode(m) {
+  mode = m;
+  laserMat.color.set(m === 'id' ? 0xff2030 : 0xffffff); laserMat.opacity = m === 'id' ? 0.9 : 0.5;
+  reticle.visible = false;
+  if (m !== 'id') clearPick();
+}
+// Clic en el PC (sin arrastrar)
+let down = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+  if (EMBED) controls.autoRotate = false;
+  pick(ray, false);
+});
 
 renderer.setAnimationLoop((t, frame) => {
   if (frame && hitSource) {
     const ref = renderer.xr.getReferenceSpace();
     const hits = frame.getHitTestResults(hitSource);
-    if (hits.length) {
+    if (hits.length && mode !== 'id') {
       reticle.visible = true;
       reticle.matrix.fromArray(hits[0].getPose(ref).transform.matrix);
     } else reticle.visible = false;
