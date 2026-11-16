@@ -104,8 +104,10 @@ function parseCSV(text) {
     if (!map.has(loc)) map.set(loc, []);
     map.get(loc).push(item);
   }
+  hasVal = [...map.values()].some((a) => a.some((i) => i.val));
   return map;
 }
+let hasVal = false;
 let stock = new Map(), stockText = '', stockSrc = '';
 async function loadStock() {
   try {
@@ -263,20 +265,20 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function showCell(code) {
   const { items, qty, val } = cellSummary(code);
   $('res').innerHTML = `<div class="loc">${code}</div><div class="sub">${describe(code)}</div>` +
-    (items.length ? `<table><tr><th>Referencia</th><th>Descripción</th><th class="n">Cant.</th><th class="n">Valor</th></tr>` +
-      items.map((i) => `<tr><td>${esc(i.ref)}</td><td>${esc(i.desc)}</td><td class="n">${fmtN(i.qty)}</td><td class="n">${fmtE(i.val)}</td></tr>`).join('') +
-      `<tr><th colspan="2">Total</th><th class="n">${fmtN(qty)}</th><th class="n">${fmtE(val)}</th></tr></table>` : '<p>Hueco vacío.</p>') +
+    (items.length ? `<table><tr><th>Referencia</th><th>Descripción</th><th class="n">Cant.</th>${hasVal ? '<th class="n">Valor</th>' : ''}</tr>` +
+      items.map((i) => `<tr><td>${esc(i.ref)}</td><td>${esc(i.desc)}</td><td class="n">${i.qty ? fmtN(i.qty) : ''}</td>${hasVal ? `<td class="n">${fmtE(i.val)}</td>` : ''}</tr>`).join('') +
+      `<tr><th colspan="2">Total</th><th class="n">${fmtN(qty)}</th>${hasVal ? `<th class="n">${fmtE(val)}</th>` : ''}</tr></table>` : '<p>Hueco vacío.</p>') +
     `<p style="margin-top:14px"><a href="#" id="back" style="color:#aaa">← Resumen</a></p>`;
   $('back').onclick = (e) => { e.preventDefault(); select(null); };
 }
 function showSummary() {
   let refs = new Set(), qty = 0, val = 0, used = 0;
-  for (const [loc, items] of stock) { if (cellByLoc.has(loc)) used++; for (const i of items) { refs.add(i.ref); qty += i.qty; val += i.val; } }
+  for (const [loc, items] of stock) { if (cellByLoc.has(loc)) used++; for (const i of items) { if (!i.ref.startsWith('(')) refs.add(i.ref); qty += i.qty; val += i.val; } }
   const unknown = [...stock.keys()].filter((k) => !cellByLoc.has(k));
   $('src').textContent = stockSrc === 'demo' ? 'DATOS DE EJEMPLO (inventados)' : 'Stock real (cifrado)';
   $('src').className = 'tag' + (stockSrc === 'demo' ? ' demo' : '');
   if (hits.size) return renderHits();
-  $('res').innerHTML = `<p><b>${fmtE(val)}</b> · ${refs.size} referencias · ${fmtN(qty)} unidades<br>${used} de ${cells.length} huecos ocupados</p>` +
+  $('res').innerHTML = `<p>${hasVal ? `<b>${fmtE(val)}</b> · ` : ''}${refs.size} referencias · ${fmtN(qty)} unidades<br>${used} de ${cells.length} huecos ocupados</p>` +
     (unknown.length ? `<p style="color:#ffb000">Ubicaciones del CSV que no están en el modelo (${unknown.length}): ${unknown.slice(0, 20).map(esc).join(', ')}${unknown.length > 20 ? '…' : ''}</p>` : '') +
     `<p class="sub">Pulsa un hueco en el modelo o busca arriba. Lo que busques queda resaltado también al entrar en las gafas.</p>`;
 }
@@ -359,9 +361,9 @@ function drawPanel(title, sub, lines, foot) {
 }
 function drawCellPanel(code) {
   const { items, qty, val } = cellSummary(code);
-  const lines = items.length ? items.flatMap((i) => [{ text: `${i.ref}  ·  ${fmtN(i.qty)} ud  ·  ${fmtE(i.val)}`, bold: true }, { text: '   ' + i.desc, color: '#bbb' }])
+  const lines = items.length ? items.flatMap((i) => [{ text: `${i.qty ? fmtN(i.qty) + ' ud  ·  ' : ''}${i.ref}${hasVal ? '  ·  ' + fmtE(i.val) : ''}`, bold: true }, ...(i.desc ? [{ text: '   ' + i.desc, color: '#bbb' }] : [])])
     : [{ text: 'Hueco vacío', color: '#999' }];
-  drawPanel(code, describe(code), lines, items.length ? `Total: ${fmtN(qty)} ud · ${fmtE(val)}` : '');
+  drawPanel(code, describe(code), lines, items.length ? `Total: ${fmtN(qty)} ud${hasVal ? ' · ' + fmtE(val) : ''}` : '');
 }
 
 // ---------- Realidad mixta: calibración en dos toques ----------
