@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Almacén XR · Ferruz</title>
+<style>
+  html,body{margin:0;height:100%;background:#1b1b1f;color:#eee;font-family:system-ui,Segoe UI,Arial,sans-serif;overflow:hidden}
+  #hud{position:absolute;top:12px;left:12px;right:372px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;z-index:5}
+  #hud h1{font-size:18px;margin:0 10px 0 0;color:#e30613}
+  button,.btn{background:#e30613;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-size:15px;cursor:pointer;font-family:inherit}
+  .sec{background:#3a3a42}
+  #side{position:absolute;top:0;right:0;bottom:0;width:360px;background:#222228;z-index:6;display:flex;flex-direction:column;box-shadow:-4px 0 20px rgba(0,0,0,.35)}
+  #side .pad{padding:14px}
+  #q{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:8px;border:1px solid #444;background:#15151a;color:#fff;font-size:15px}
+  #res{flex:1;overflow:auto;padding:0 14px 14px}
+  .loc{font-size:26px;font-weight:800;color:#e30613}
+  .sub{opacity:.7;font-size:13px;margin-bottom:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{padding:6px 4px;border-bottom:1px solid #333;text-align:left;vertical-align:top}
+  th{opacity:.6;font-weight:600}
+  td.n{text-align:right;white-space:nowrap}
+  .hit{padding:8px;border-radius:8px;background:#2c2c33;margin:6px 0;cursor:pointer;font-size:13px}
+  .hit b{color:#ffb000}
+  .tag{display:inline-block;font-size:12px;padding:3px 8px;border-radius:20px;background:#3a3a42;margin-top:8px}
+  .tag.demo{background:#8a5a00}
+  #info{position:absolute;bottom:12px;left:12px;right:372px;font-size:13px;opacity:.8;z-index:5}
+  #load{position:absolute;inset:0;right:360px;display:flex;align-items:center;justify-content:center;font-size:20px;z-index:4;pointer-events:none}
+  @media (max-width:800px){#side{width:100%;top:auto;height:42%}#hud,#info{right:12px}#load{right:0}#info{display:none}}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"./lib/three.module.js",
+  "three/addons/":"./lib/addons/"
+}}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h1>FERRUZ · Almacén XR</h1>
+  <button id="btnAR">Entrar en realidad mixta</button>
+  <button id="btnMode" class="sec">Vista: estructura</button>
+  <label class="btn sec">Cargar CSV<input id="fCsv" type="file" accept=".csv,.txt" hidden></label>
+  <button id="btnEnc" class="sec" title="Cifra el CSV cargado con tu contraseña para subirlo a GitHub como almacen/stock.enc">Guardar stock cifrado</button>
+</div>
+<div id="load">Cargando…</div>
+<div id="side">
+  <div class="pad">
+    <input id="q" placeholder="Buscar referencia, descripción o ubicación (p. ej. 32D05)">
+    <div id="src" class="tag"></div>
+  </div>
+  <div id="res"></div>
+</div>
+<div id="info">
+  Ratón: pulsa un hueco para ver su contenido. En las Quest 3: «Entrar en realidad mixta» y sigue los dos pasos de calibración.
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { ensureKey, fetchDecrypted } from './lib/gate.js';
+
+// ---------- Acceso (misma contraseña que el catálogo) ----------
+await ensureKey('app/check.enc');
+
+const cfg = await (await fetch('almacen/config.json')).json();
+const $ = (id) => document.getElementById(id);
+const fmtN = (n) => n.toLocaleString('es-ES', { maximumFractionDigits: 2 });
+const fmtE = (n) => n.toLocaleString('es-ES', { maximumFractionDigits: 0 }) + ' €';
+const LEVEL_COLORS = { A: '#111', B: '#b5452c', C: '#1f9d55', D: '#c2187a', E: '#1e63c9', F: '#e8c400', G: '#5b8c1e' };
+
+// ---------- Datos de stock ----------
+function normLoc(s) {
+  const t = String(s || '').toUpperCase().replace(/[\s\-_./]/g, '');
+  const m = t.match(/^(\d{2})([A-Z])(\d{1,3})$/);
+  return m ? m[1] + m[2] + m[3].padStart(2, '0') : t;
+}
+function num(s) {
+  let t = String(s ?? '').trim().replace(/[€\s]/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  const v = parseFloat(t); return isFinite(v) ? v : 0;
+}
+function parseCSV(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+  const sep = [';', '\t', ','].sort((a, b) => lines[0].split(b).length - lines[0].split(a).length)[0];
+  const split = (l) => { const out = []; let cur = '', q = false;
+    for (const ch of l) { if (ch === '"') q = !q; else if (ch === sep && !q) { out.push(cur); cur = ''; } else cur += ch; }
+    out.push(cur); return out.map((x) => x.trim()); };
+  const norm = (h) => h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+  const head = split(lines[0]).map(norm);
+  const col = (...names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
+  const iU = col('ubicacion', 'ubic', 'loc'), iR = col('referencia', 'ref', 'articulo', 'codigo', 'componente');
+  const iE = col('estanteria'), iN = col('nivel', 'altura'), iP = col('posicion', 'hueco'); // formato Tableau: columnas separadas
+  const iD = col('descripcion', 'desc', 'nombre'), iQ = col('cantidad', 'cant', 'unidades', 'stock'), iV = col('valor', 'importe', 'euros');
+  const byParts = iU < 0 && iE >= 0 && iN >= 0 && iP >= 0;
+  if ((iU < 0 && !byParts) || iR < 0) throw new Error('El CSV necesita las columnas «ubicacion» (o «estanteria», «nivel» y «posicion») y «referencia».');
+  const map = new Map();
+  for (const l of lines.slice(1)) {
+    const c = split(l);
+    const loc = normLoc(byParts ? (c[iE] || '').replace(/\D/g, '') + (c[iN] || '').trim().slice(-1) + (c[iP] || '').replace(/\D/g, '') : c[iU]);
+    if (!loc || !c[iR]) continue;
+    const item = { ref: c[iR] || '', desc: iD >= 0 ? c[iD] : '', qty: iQ >= 0 ? num(c[iQ]) : 0, val: iV >= 0 ? num(c[iV]) : 0 };
+    if (!map.has(loc)) map.set(loc, []);
+    map.get(loc).push(item);
+  }
+  hasVal = [...map.values()].some((a) => a.some((i) => i.val));
+  return map;
+}
+let hasVal = false;
+let stock = new Map(), stockText = '', stockSrc = '';
+async function loadStock() {
+  try {
+    const head = await fetch('almacen/stock.enc', { method: 'HEAD' });
+    if (head.ok) {
+      stockText = new TextDecoder().decode(await fetchDecrypted('almacen/stock.enc'));
+      stockSrc = 'real';
+    }
+  } catch (e) { console.warn(e); }
+  if (!stockSrc) { stockText = await (await fetch('almacen/stock-demo.csv')).text(); stockSrc = 'demo'; }
+  stock = parseCSV(stockText);
+}
+await loadStock();
+
+// ---------- Escena ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.xr.enabled = true;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const BG = new THREE.Color(0x1b1b1f);
+scene.background = BG;
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 300);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444455, 2.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(5, 10, -6); scene.add(sun);
+const grid = new THREE.GridHelper(40, 40, 0x555555, 0x333333); grid.position.set(7, 0, 1); scene.add(grid);
+const controls = new OrbitControls(camera, renderer.domElement);
+
+const almacen = new THREE.Group(); // todo el almacén; la calibración XR mueve este grupo
+scene.add(almacen);
+
+// ---------- Geometría de las estanterías ----------
+const L_ = cfg.niveles;
+function levelSpan(lv) {
+  const i = L_.indexOf(lv);
+  const y0 = i === 0 ? 0 : cfg.cotaLarguero[lv];
+  const y1 = i === L_.length - 1 ? y0 + cfg.altoUltimoNivel : cfg.cotaLarguero[L_[i + 1]] - cfg.cantoLarguero;
+  return [y0, y1];
+}
+const W = cfg.anchoVano, w = cfg.anchoMontante, D = cfg.fondo, nH = cfg.huecosPorVano;
+function slotS(p) { const k = p - 1, bay = Math.floor(k / nH); return w + bay * (W + w) + (k % nH) * (W / nH); }
+
+const matUp = new THREE.MeshStandardMaterial({ color: 0x1d2c5a, roughness: .6, metalness: .3, transparent: true, opacity: 1 });
+const matBeam = new THREE.MeshStandardMaterial({ color: 0xd2541b, roughness: .5, metalness: .2, transparent: true, opacity: 1 });
+const M = {
+  empty: new THREE.MeshBasicMaterial({ color: 0x8899aa, transparent: true, opacity: .06, depthWrite: false }),
+  full: new THREE.MeshBasicMaterial({ color: 0x2fa86a, transparent: true, opacity: .28, depthWrite: false }),
+  hit: new THREE.MeshBasicMaterial({ color: 0xffb000, transparent: true, opacity: .6, depthWrite: false }),
+  hover: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .45, depthWrite: false }),
+  sel: new THREE.MeshBasicMaterial({ color: 0xe30613, transparent: true, opacity: .55, depthWrite: false }),
+};
+const cells = []; const cellByLoc = new Map();
+const structure = new THREE.Group(); almacen.add(structure);
+const labelPlanes = [];
+
+function place(obj, r, s, y, d) {
+  const [ox, oz] = r.origen, [ex, ez] = r.eje, [fx, fz] = r.haciaFondo;
+  obj.position.set(ox + ex * s + fx * d, y, oz + ez * s + fz * d);
+  obj.rotation.y = -Math.atan2(ez, ex);
+}
+for (const r of cfg.estanterias) {
+  const bays = Math.ceil(r.posiciones / nH), L = bays * W + (bays + 1) * w, H = cfg.altoMontante;
+  r._L = L;
+  const ups = [], beams = [];
+  for (let b = 0; b <= bays; b++) for (const d of [0, D]) {
+    const g = new THREE.BoxGeometry(w, H, 0.08); const o = new THREE.Object3D();
+    place(o, r, b * (W + w) + w / 2, H / 2, d === 0 ? 0.04 : D - 0.04); o.updateMatrix(); g.applyMatrix4(o.matrix); ups.push(g);
+  }
+  for (const lv of L_.slice(1)) for (let b = 0; b < bays; b++) for (const d of [0.05, D - 0.05]) {
+    const g = new THREE.BoxGeometry(W, cfg.cantoLarguero, 0.05); const o = new THREE.Object3D();
+    place(o, r, w + b * (W + w) + W / 2, cfg.cotaLarguero[lv] - cfg.cantoLarguero / 2, d); o.updateMatrix(); g.applyMatrix4(o.matrix); beams.push(g);
+  }
+  structure.add(new THREE.Mesh(mergeGeometries(ups), matUp), new THREE.Mesh(mergeGeometries(beams), matBeam));
+
+  // Etiquetas: un único lienzo por estantería, delante de su cara
+  const CW = 4096, CH = 1792, cv = document.createElement('canvas'); cv.width = CW; cv.height = CH;
+  const cx = cv.getContext('2d'), sx = CW / L, sy = CH / H;
+  // Si la cara mira hacia el lado contrario al eje de numeración, el lienzo se dibuja invertido
+  const th = Math.atan2(-r.haciaFondo[0], -r.haciaFondo[1]);
+  const flip = Math.cos(th) * r.eje[0] - Math.sin(th) * r.eje[1] < 0;
+  const U = (s) => (flip ? L - s : s) * sx;
+  for (const lv of L_) {
+    const [y0] = levelSpan(lv);
+    for (let p = 1; p <= r.posiciones; p++) {
+      const code = r.id + lv + String(p).padStart(2, '0');
+      const u = U(slotS(p) + W / nH / 2), v = CH - (y0 + 0.07) * sy;
+      const bw = 0.42 * sx, bh = 0.11 * sy;
+      cx.fillStyle = 'rgba(255,255,255,.92)'; cx.fillRect(u - bw / 2, v - bh / 2, bw, bh);
+      cx.font = `bold ${Math.round(bh * .72)}px Arial`; cx.textBaseline = 'middle'; cx.textAlign = 'center';
+      const pre = r.id, post = String(p).padStart(2, '0');
+      const tw = cx.measureText(code).width, x0 = u - tw / 2;
+      cx.fillStyle = '#111'; cx.textAlign = 'left'; cx.fillText(pre, x0, v);
+      const wPre = cx.measureText(pre).width, wL = cx.measureText(lv).width;
+      cx.fillStyle = LEVEL_COLORS[lv] || '#111'; cx.fillRect(x0 + wPre - 2, v - bh * .42, wL + 4, bh * .84);
+      cx.fillStyle = lv === 'F' ? '#111' : '#fff'; cx.fillText(lv, x0 + wPre, v);
+      cx.fillStyle = '#111'; cx.fillText(post, x0 + wPre + wL + 2, v);
+    }
+  }
+  cx.font = `bold ${Math.round(0.5 * sy)}px Arial`; cx.fillStyle = 'rgba(255,255,255,.9)'; cx.textAlign = 'left';
+  cx.textAlign = 'center'; cx.fillText(r.id, U(0.6), 0.45 * sy);
+  const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 4; tex.colorSpace = THREE.SRGBColorSpace;
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(L, H), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const [fx, fz] = r.haciaFondo;
+  place(plane, r, L / 2, H / 2, -0.03); plane.rotation.y = Math.atan2(-fx, -fz);
+  almacen.add(plane); labelPlanes.push(plane);
+
+  // Huecos (volúmenes seleccionables)
+  for (const lv of L_) {
+    const [y0, y1] = levelSpan(lv);
+    for (let p = 1; p <= r.posiciones; p++) {
+      const code = r.id + lv + String(p).padStart(2, '0');
+      const m = new THREE.Mesh(new THREE.BoxGeometry(W / nH - 0.04, y1 - y0 - 0.04, D - 0.04), M.empty);
+      place(m, r, slotS(p) + W / nH / 2, (y0 + y1) / 2, D / 2);
+      m.userData = { code, rack: r.id, lv, p, front: (() => { const v = new THREE.Vector3(); const o = new THREE.Object3D(); place(o, r, slotS(p) + W / nH / 2, (y0 + y1) / 2, 0); return o.position.clone(); })(), normal: new THREE.Vector3(-r.haciaFondo[0], 0, -r.haciaFondo[1]) };
+      almacen.add(m); cells.push(m); cellByLoc.set(code, m);
+    }
+  }
+}
+const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+edge.visible = false; almacen.add(edge);
+
+// ---------- Estado y modos de vista ----------
+const MODES = ['estructura', 'ocupados', 'solo selección'];
+let mode = 0, hover = null, selected = null, hits = new Set();
+function refreshCells() {
+  const showStruct = mode === 0;
+  structure.visible = showStruct; labelPlanes.forEach((p) => (p.visible = mode !== 2));
+  for (const c of cells) {
+    const code = c.userData.code, full = stock.has(code);
+    let mat = mode === 2 ? null : (full ? M.full : (showStruct ? M.empty : null));
+    if (hits.has(code)) mat = M.hit;
+    if (hover === c) mat = M.hover;
+    if (selected === c) mat = M.sel;
+    c.visible = !!mat; if (mat) c.material = mat;
+  }
+  const e = selected || hover;
+  edge.visible = !!e;
+  if (e) { e.geometry.computeBoundingBox(); const s = new THREE.Vector3(); e.geometry.boundingBox.getSize(s);
+    edge.position.copy(e.position); edge.rotation.copy(e.rotation); edge.scale.copy(s); }
+  $('btnMode').textContent = 'Vista: ' + MODES[mode];
+}
+function setMode(m) { mode = m; refreshCells(); }
+$('btnMode').onclick = () => setMode((mode + 1) % MODES.length);
+
+// ---------- Panel lateral (escritorio) ----------
+function cellSummary(code) {
+  const items = stock.get(code) || [];
+  return { items, qty: items.reduce((a, b) => a + b.qty, 0), val: items.reduce((a, b) => a + b.val, 0) };
+}
+function describe(code) {
+  const m = code.match(/^(\d{2})([A-Z])(\d{2})$/);
+  return m ? `Estantería ${m[1]} · Nivel ${m[2]}${m[2] === 'A' ? ' (suelo)' : ''} · Posición ${m[3]}` : '';
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function showCell(code) {
+  const { items, qty, val } = cellSummary(code);
+  $('res').innerHTML = `<div class="loc">${code}</div><div class="sub">${describe(code)}</div>` +
+    (items.length ? `<table><tr><th>Referencia</th><th>Descripción</th><th class="n">Cant.</th>${hasVal ? '<th class="n">Valor</th>' : ''}</tr>` +
+      items.map((i) => `<tr><td>${esc(i.ref)}</td><td>${esc(i.desc)}</td><td class="n">${i.qty ? fmtN(i.qty) : ''}</td>${hasVal ? `<td class="n">${fmtE(i.val)}</td>` : ''}</tr>`).join('') +
+      `<tr><th colspan="2">Total</th><th class="n">${fmtN(qty)}</th>${hasVal ? `<th class="n">${fmtE(val)}</th>` : ''}</tr></table>` : '<p>Hueco vacío.</p>') +
+    `<p style="margin-top:14px"><a href="#" id="back" style="color:#aaa">← Resumen</a></p>`;
+  $('back').onclick = (e) => { e.preventDefault(); select(null); };
+}
+function showSummary() {
+  let refs = new Set(), qty = 0, val = 0, used = 0;
+  for (const [loc, items] of stock) { if (cellByLoc.has(loc)) used++; for (const i of items) { if (!i.ref.startsWith('(')) refs.add(i.ref); qty += i.qty; val += i.val; } }
+  const unknown = [...stock.keys()].filter((k) => !cellByLoc.has(k));
+  $('src').textContent = stockSrc === 'demo' ? 'DATOS DE EJEMPLO (inventados)' : 'Stock real (cifrado)';
+  $('src').className = 'tag' + (stockSrc === 'demo' ? ' demo' : '');
+  if (hits.size) return renderHits();
+  $('res').innerHTML = `<p>${hasVal ? `<b>${fmtE(val)}</b> · ` : ''}${refs.size} referencias · ${fmtN(qty)} unidades<br>${used} de ${cells.length} huecos ocupados</p>` +
+    (unknown.length ? `<p style="color:#ffb000">Ubicaciones del CSV que no están en el modelo (${unknown.length}): ${unknown.slice(0, 20).map(esc).join(', ')}${unknown.length > 20 ? '…' : ''}</p>` : '') +
+    `<p class="sub">Pulsa un hueco en el modelo o busca arriba. Lo que busques queda resaltado también al entrar en las gafas.</p>`;
+}
+let lastHits = [];
+function renderHits() {
+  $('res').innerHTML = `<p class="sub">${lastHits.length} coincidencias en ${hits.size} huecos</p>` +
+    lastHits.slice(0, 200).map((h) => `<div class="hit" data-l="${h.loc}"><b>${h.loc}</b> · ${esc(h.ref)} — ${esc(h.desc)} · ${fmtN(h.qty)} ud</div>`).join('');
+  $('res').querySelectorAll('.hit').forEach((d) => (d.onclick = () => select(cellByLoc.get(d.dataset.l) || null, true)));
+}
+$('q').oninput = () => {
+  const q = $('q').value.trim().toLowerCase(); hits = new Set(); lastHits = [];
+  if (q.length >= 2) for (const [loc, items] of stock) for (const i of items)
+    if (loc.toLowerCase().includes(q.replace(/[\s-]/g, '')) || i.ref.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q)) { hits.add(loc); lastHits.push({ loc, ...i }); }
+  selected = null; refreshCells(); hits.size ? renderHits() : showSummary(); xrPanelUpdate();
+};
+function select(c, focus) {
+  selected = c; refreshCells();
+  if (c) { showCell(c.userData.code); if (focus && !renderer.xr.isPresenting) { const t = c.getWorldPosition(new THREE.Vector3());
+    const n = c.userData.normal; controls.target.copy(t); camera.position.copy(t).addScaledVector(n, 4).add(new THREE.Vector3(0, 0.6, 0)); } }
+  else showSummary();
+  xrPanelUpdate();
+}
+
+// ---------- Cargar CSV y guardarlo cifrado ----------
+$('fCsv').onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const buf = new Uint8Array(await f.arrayBuffer());
+  let text = (buf[0] === 0xFF && buf[1] === 0xFE) ? new TextDecoder('utf-16le').decode(buf) // tabulación cruzada de Tableau
+    : new TextDecoder('utf-8').decode(buf);
+  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf); // CSV de Excel en ANSI
+  try { stock = parseCSV(text); stockText = text; stockSrc = 'csv'; hits = new Set(); selected = null; refreshCells(); showSummary();
+    $('src').textContent = 'CSV cargado: ' + f.name + ' (solo en este navegador)'; $('src').className = 'tag'; }
+  catch (err) { alert(err.message); }
+};
+$('btnEnc').onclick = async () => {
+  if (stockSrc === 'demo') { alert('Primero carga el CSV real con «Cargar CSV».'); return; }
+  const rawB64 = sessionStorage.getItem('ferruz_xr_key') || localStorage.getItem('ferruz_xr_key');
+  const raw = Uint8Array.from(atob(rawB64), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(stockText)));
+  const out = new Uint8Array(12 + enc.length); out.set(iv); out.set(enc, 12);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([out])); a.download = 'stock.enc'; a.click();
+  alert('Descargado stock.enc. Súbelo a la carpeta «almacen» del repositorio visor-xr en GitHub (sustituye al anterior).');
+};
+
+// ---------- Ratón (escritorio) ----------
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+function pick(ev) {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera); const h = ray.intersectObjects(cells, false); return h.length ? h[0].object : null;
+}
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', (e) => (downAt = [e.clientX, e.clientY]));
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  select(pick(e));
+});
+renderer.domElement.addEventListener('pointermove', (e) => { if (renderer.xr.isPresenting) return; const c = pick(e); if (c !== hover) { hover = c; refreshCells(); } });
+
+// ---------- Panel flotante para las gafas ----------
+const PW = 1024, PH = 680, pcv = document.createElement('canvas'); pcv.width = PW; pcv.height = PH;
+const pctx = pcv.getContext('2d'), ptex = new THREE.CanvasTexture(pcv); ptex.colorSpace = THREE.SRGBColorSpace;
+const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6 * PH / PW), new THREE.MeshBasicMaterial({ map: ptex, transparent: true, depthTest: false }));
+panel.renderOrder = 10; panel.visible = false; scene.add(panel);
+function drawPanel(title, sub, lines, foot) {
+  const c = pctx; c.clearRect(0, 0, PW, PH);
+  c.fillStyle = 'rgba(22,22,26,.93)'; c.beginPath(); c.roundRect(4, 4, PW - 8, PH - 8, 28); c.fill();
+  c.fillStyle = '#e30613'; c.fillRect(4, 4, 14, PH - 8);
+  c.textBaseline = 'top'; c.fillStyle = '#fff'; c.font = 'bold 64px Arial'; c.fillText(title, 44, 30);
+  c.fillStyle = '#bbb'; c.font = '30px Arial'; c.fillText(sub || '', 44, 108);
+  c.font = '32px Arial'; let y = 166;
+  for (const l of lines) { if (y > PH - 110) { c.fillStyle = '#bbb'; c.fillText('…', 44, y); break; }
+    c.fillStyle = l.color || '#eee'; c.font = (l.bold ? 'bold ' : '') + '32px Arial';
+    let t = l.text; while (c.measureText(t).width > PW - 90 && t.length > 4) t = t.slice(0, -2);
+    if (t !== l.text) t = t.slice(0, -1) + '…'; c.fillText(t, 44, y); y += 46; }
+  if (foot) { c.fillStyle = '#ffb000'; c.font = 'bold 32px Arial'; c.fillText(foot, 44, PH - 70); }
+  ptex.needsUpdate = true;
+}
+function drawCellPanel(code) {
+  const { items, qty, val } = cellSummary(code);
+  const lines = items.length ? items.flatMap((i) => [{ text: `${i.qty ? fmtN(i.qty) + ' ud  ·  ' : ''}${i.ref}${hasVal ? '  ·  ' + fmtE(i.val) : ''}`, bold: true }, ...(i.desc ? [{ text: '   ' + i.desc, color: '#bbb' }] : [])])
+    : [{ text: 'Hueco vacío', color: '#999' }];
+  drawPanel(code, describe(code), lines, items.length ? `Total: ${fmtN(qty)} ud${hasVal ? ' · ' + fmtE(val) : ''}` : '');
+}
+
+// ---------- Realidad mixta: calibración en dos toques ----------
+let calib = 0; // 0 = sin calibrar (esperando punto 1), 1 = esperando punto 2, 2 = calibrado
+let P1 = null;
+const firstRack = cfg.estanterias[0];
+function instructions() {
+  if (calib === 0) drawPanel('Calibrar · paso 1 de 2', `Estantería ${firstRack.id}, extremo de la posición 01`, [
+    { text: 'Apoya el mando en el suelo, pegado al pie del' }, { text: `montante DELANTERO (lado pasillo) de la ${firstRack.id},` },
+    { text: 'en el extremo de la posición 01 (junto a la columna).' }, { text: '' }, { text: 'Pulsa el GATILLO.', bold: true, color: '#ffb000' }]);
+  else drawPanel('Calibrar · paso 2 de 2', 'Define la dirección de la estantería', [
+    { text: 'Ahora apoya el mando en el pie de otro montante' }, { text: 'delantero de la misma estantería, cuanto más' },
+    { text: 'lejos mejor (por ejemplo el del fondo del pasillo).' }, { text: '' }, { text: 'Pulsa el GATILLO.', bold: true, color: '#ffb000' }]);
+  const cam = renderer.xr.getCamera(); const p = new THREE.Vector3(), q = new THREE.Quaternion(); cam.getWorldPosition(p); cam.getWorldQuaternion(q);
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q); fwd.y = 0; fwd.normalize();
+  panel.position.copy(p).addScaledVector(fwd, 1.0); panel.position.y = p.y - 0.1; panel.lookAt(p); panel.visible = true;
+}
+function xrPanelUpdate() {
+  if (!renderer.xr.isPresenting || calib < 2) return;
+  const c = selected || hover;
+  if (!c) { panel.visible = false; return; }
+  drawCellPanel(c.userData.code);
+  const front = almacen.localToWorld(c.userData.front.clone());
+  const n = c.userData.normal.clone().applyQuaternion(almacen.quaternion);
+  panel.position.copy(front).addScaledVector(n, 0.35); panel.position.y = THREE.MathUtils.clamp(front.y, 0.9, 2.0);
+  const cam = renderer.xr.getCamera().getWorldPosition(new THREE.Vector3()); panel.lookAt(cam); panel.visible = true;
+}
+
+const ctrls = [0, 1].map((i) => {
+  const c = renderer.xr.getController(i), g = renderer.xr.getControllerGrip(i);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0xe30613 }));
+  line.scale.z = 8; c.add(line);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012), new THREE.MeshBasicMaterial({ color: 0xffb000 })); g.add(dot);
+  scene.add(c, g); c.userData.line = line;
+  c.addEventListener('connected', (e) => (c.userData.hand = e.data.handedness));
+  c.addEventListener('select', () => onTrigger(c, g));
+  return { c, g };
+});
+function onTrigger(c, g) {
+  if (calib < 2) {
+    const p = g.getWorldPosition(new THREE.Vector3()); p.y = 0;
+    if (calib === 0) { P1 = p; calib = 1; instructions(); return; }
+    const dir = p.clone().sub(P1); if (dir.length() < 0.5) return; // demasiado cerca
+    almacen.position.copy(P1); almacen.rotation.set(0, -Math.atan2(dir.z, dir.x), 0);
+    // la estantería 1 tiene su eje y origen definidos en config: corregir si no es (0,0)/(1,0)
+    const [ex, ez] = firstRack.eje, [ox, oz] = firstRack.origen;
+    almacen.rotation.y += Math.atan2(ez, ex); almacen.updateMatrixWorld();
+    almacen.position.sub(new THREE.Vector3(ox, 0, oz).applyQuaternion(almacen.quaternion));
+    almacen.visible = true; calib = 2; panel.visible = false; setMode(0); return;
+  }
+  const h = rayHit(c); select(h); // gatillo = fijar hueco (o soltar si apunta al vacío)
+}
+const tmpM = new THREE.Matrix4();
+function rayHit(c) {
+  tmpM.identity().extractRotation(c.matrixWorld);
+  ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+  const h = ray.intersectObjects(cells, false); return h.length ? h[0] : null;
+}
+
+let lastBtn = {};
+function handleXRInput(dt) {
+  const session = renderer.xr.getSession(); if (!session) return;
+  for (const src of session.inputSources) {
+    const gp = src.gamepad; if (!gp) continue;
+    const hand = src.handedness, b = (i) => !!gp.buttons[i]?.pressed;
+    const ax = gp.axes[2] ?? 0, ay = gp.axes[3] ?? 0;
+    if (calib === 2) {
+      if (hand === 'left' && (Math.abs(ax) > 0.25 || Math.abs(ay) > 0.25)) { // ajuste fino de posición
+        const v = new THREE.Vector3(ax, 0, ay).multiplyScalar(0.15 * dt).applyQuaternion(almacen.quaternion);
+        almacen.position.add(v);
+      }
+      if (hand === 'right' && Math.abs(ax) > 0.25) almacen.rotation.y -= ax * THREE.MathUtils.degToRad(3) * dt;
+    }
+    const key = hand + ':';
+    if (hand === 'right') {
+      if (b(4) && !lastBtn[key + 4] && calib === 2) setMode((mode + 1) % MODES.length); // A: vista
+      if (b(5) && !lastBtn[key + 5]) { calib = 0; almacen.visible = false; select(null); instructions(); } // B: recalibrar
+    }
+    if (hand === 'left' && b(4) && !lastBtn[key + 4]) { hits = new Set(); $('q').value = ''; refreshCells(); } // X: borrar búsqueda
+    lastBtn[key + 4] = b(4); lastBtn[key + 5] = b(5);
+  }
+  if (calib === 2) {
+    let best = null;
+    for (const { c } of ctrls) { const h = rayHit(c); if (h && (!best || h.distance < best.distance)) best = h;
+      c.userData.line.scale.z = h ? h.distance : 8; }
+    const nh = best ? best.object : null;
+    if (nh !== hover) { hover = nh; refreshCells(); xrPanelUpdate(); }
+  }
+}
+
+async function startAR() {
+  if (!navigator.xr) { alert('Este navegador no soporta WebXR. Ábrelo en el navegador de las Meta Quest.'); return; }
+  const arOK = await navigator.xr.isSessionSupported('immersive-ar');
+  const session = await navigator.xr.requestSession(arOK ? 'immersive-ar' : 'immersive-vr', { requiredFeatures: ['local-floor'] });
+  renderer.xr.setReferenceSpaceType('local-floor');
+  await renderer.xr.setSession(session);
+  scene.background = arOK ? null : BG; grid.visible = !arOK;
+  calib = 0; almacen.visible = false; hover = null;
+  setTimeout(instructions, 300);
+  session.addEventListener('end', () => {
+    scene.background = BG; grid.visible = true; almacen.visible = true; panel.visible = false;
+    almacen.position.set(0, 0, 0); almacen.rotation.set(0, 0, 0); calib = 0; refreshCells();
+  });
+}
+$('btnAR').onclick = startAR;
+
+// ---------- Arranque ----------
+function resize() {
+  const side = innerWidth > 800 ? 360 : 0, h = innerWidth > 800 ? innerHeight : innerHeight * 0.58;
+  renderer.setSize(innerWidth - side, h); camera.aspect = (innerWidth - side) / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+const L0 = firstRack._L || 14;
+camera.position.set(L0 / 2 + 2, 3.2, -9); controls.target.set(L0 / 2, 2.2, 1); controls.update();
+setMode(0); showSummary(); $('load').style.display = 'none';
+window.__almacen = { stock, cells, cellByLoc, cfg, select, setMode };
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (renderer.xr.isPresenting) handleXRInput(dt); else controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
