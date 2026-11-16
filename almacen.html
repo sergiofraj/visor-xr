@@ -90,12 +90,16 @@ function parseCSV(text) {
   const norm = (h) => h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
   const head = split(lines[0]).map(norm);
   const col = (...names) => head.findIndex((h) => names.some((n) => h.startsWith(n)));
-  const iU = col('ubicacion', 'ubic', 'loc'), iR = col('referencia', 'ref', 'articulo', 'codigo');
+  const iU = col('ubicacion', 'ubic', 'loc'), iR = col('referencia', 'ref', 'articulo', 'codigo', 'componente');
+  const iE = col('estanteria'), iN = col('nivel', 'altura'), iP = col('posicion', 'hueco'); // formato Tableau: columnas separadas
   const iD = col('descripcion', 'desc', 'nombre'), iQ = col('cantidad', 'cant', 'unidades', 'stock'), iV = col('valor', 'importe', 'euros');
-  if (iU < 0 || iR < 0) throw new Error('El CSV necesita al menos las columnas «ubicacion» y «referencia».');
+  const byParts = iU < 0 && iE >= 0 && iN >= 0 && iP >= 0;
+  if ((iU < 0 && !byParts) || iR < 0) throw new Error('El CSV necesita las columnas «ubicacion» (o «estanteria», «nivel» y «posicion») y «referencia».');
   const map = new Map();
   for (const l of lines.slice(1)) {
-    const c = split(l); const loc = normLoc(c[iU]); if (!loc) continue;
+    const c = split(l);
+    const loc = normLoc(byParts ? (c[iE] || '').replace(/\D/g, '') + (c[iN] || '').trim().slice(-1) + (c[iP] || '').replace(/\D/g, '') : c[iU]);
+    if (!loc || !c[iR]) continue;
     const item = { ref: c[iR] || '', desc: iD >= 0 ? c[iD] : '', qty: iQ >= 0 ? num(c[iQ]) : 0, val: iV >= 0 ? num(c[iV]) : 0 };
     if (!map.has(loc)) map.set(loc, []);
     map.get(loc).push(item);
@@ -299,8 +303,10 @@ function select(c, focus) {
 // ---------- Cargar CSV y guardarlo cifrado ----------
 $('fCsv').onchange = async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  let text = await f.text();
-  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(await f.arrayBuffer()); // CSV de Excel en ANSI
+  const buf = new Uint8Array(await f.arrayBuffer());
+  let text = (buf[0] === 0xFF && buf[1] === 0xFE) ? new TextDecoder('utf-16le').decode(buf) // tabulación cruzada de Tableau
+    : new TextDecoder('utf-8').decode(buf);
+  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf); // CSV de Excel en ANSI
   try { stock = parseCSV(text); stockText = text; stockSrc = 'csv'; hits = new Set(); selected = null; refreshCells(); showSummary();
     $('src').textContent = 'CSV cargado: ' + f.name + ' (solo en este navegador)'; $('src').className = 'tag'; }
   catch (err) { alert(err.message); }
