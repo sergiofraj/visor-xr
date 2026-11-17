@@ -33,6 +33,9 @@
   #xrui #xq{flex:1;min-width:160px;padding:10px;border-radius:8px;border:0;font-size:16px}
   #xrui button{padding:12px 14px;font-size:16px}
   #xrinfo{position:absolute;right:10px;bottom:10px;width:min(460px,60vw);max-height:45vh;overflow:auto;background:rgba(20,20,24,.9);border-radius:10px;padding:12px;display:none}
+  #xrres{position:absolute;left:10px;top:124px;width:min(420px,55vw);max-height:50vh;overflow:auto;background:rgba(20,20,24,.92);border-radius:10px;padding:10px 12px;display:none;font-size:15px}
+  #xrres .r{padding:8px;border-radius:8px;background:#2c2c33;margin:6px 0}
+  #xrres .r b{color:#ffb000;font-size:18px}
   #xrfine{position:absolute;left:10px;bottom:10px;display:none;grid-template-columns:repeat(3,52px);gap:6px}
   #xrfine button{padding:10px 0;background:#3a3a42}
   #cross{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid #ffb000;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,.5);display:none}
@@ -64,7 +67,8 @@
 <div id="xrui">
   <div class="bar">
     <button id="xMark">Marcar punto</button>
-    <input id="xq" placeholder="Buscar referencia o ubicación">
+    <input id="xq" placeholder="Buscar referencia o ubicación" enterkeyhint="search">
+    <button id="xFind">Buscar</button>
     <button id="xMode" class="sec">Vista</button>
     <button id="xRecal" class="sec">Recalibrar</button>
     <button id="xExit" class="sec">Salir</button>
@@ -76,9 +80,10 @@
     <button data-f="lt">◀</button><button data-f="dn">▼</button><button data-f="rt">▶</button>
   </div>
   <div id="xrinfo"></div>
+  <div id="xrres"></div>
 </div>
 <div id="info">
-  Ratón: pulsa un hueco para ver su contenido. En las Quest 3: «Entrar en realidad mixta» y sigue los dos pasos de calibración.
+  Ratón: pulsa un hueco para ver su contenido. En las Quest 3: «Entrar en realidad mixta», calibra en dos pasos y pulsa el botón Y para buscar una referencia (teclado virtual).
 </div>
 <script type="module">
 import * as THREE from 'three';
@@ -320,6 +325,7 @@ $('q').oninput = () => {
   if (q.length >= 2) for (const [loc, items] of stock) for (const i of items)
     if (loc.toLowerCase().includes(q.replace(/[\s-]/g, '')) || i.ref.toLowerCase().includes(q) || i.desc.toLowerCase().includes(q)) { hits.add(loc); lastHits.push({ loc, ...i }); }
   selected = null; refreshCells(); hits.size ? renderHits() : showSummary(); xrPanelUpdate();
+  updateBeacons(); if (touchMode) renderTouchResults(q);
 };
 function select(c, focus) {
   selected = c; refreshCells();
@@ -372,8 +378,9 @@ const PW = 1024, PH = 680, pcv = document.createElement('canvas'); pcv.width = P
 const pctx = pcv.getContext('2d'), ptex = new THREE.CanvasTexture(pcv); ptex.colorSpace = THREE.SRGBColorSpace;
 const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6 * PH / PW), new THREE.MeshBasicMaterial({ map: ptex, transparent: true, depthTest: false }));
 panel.renderOrder = 10; panel.visible = false; scene.add(panel);
-function drawPanel(title, sub, lines, foot) {
-  const c = pctx; c.clearRect(0, 0, PW, PH);
+function drawPanel(title, sub, lines, foot) { drawOn(pctx, ptex, title, sub, lines, foot); }
+function drawOn(c, tex, title, sub, lines, foot) {
+  c.clearRect(0, 0, PW, PH);
   c.fillStyle = 'rgba(22,22,26,.93)'; c.beginPath(); c.roundRect(4, 4, PW - 8, PH - 8, 28); c.fill();
   c.fillStyle = '#e30613'; c.fillRect(4, 4, 14, PH - 8);
   c.textBaseline = 'top'; c.fillStyle = '#fff'; c.font = 'bold 64px Arial'; c.fillText(title, 44, 30);
@@ -384,7 +391,117 @@ function drawPanel(title, sub, lines, foot) {
     let t = l.text; while (c.measureText(t).width > PW - 90 && t.length > 4) t = t.slice(0, -2);
     if (t !== l.text) t = t.slice(0, -1) + '…'; c.fillText(t, 44, y); y += 46; }
   if (foot) { c.fillStyle = '#ffb000'; c.font = 'bold 32px Arial'; c.fillText(foot, 44, PH - 70); }
-  ptex.needsUpdate = true;
+  tex.needsUpdate = true;
+}
+
+// ---------- Buscar una referencia dentro de la realidad mixta ----------
+// Dónde está cada hueco respecto a quien mira
+function whereIs(code) {
+  const c = cellByLoc.get(code); if (!c) return '';
+  const pos = c.getWorldPosition(new THREE.Vector3());
+  const camObj = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  const cam = camObj.getWorldPosition(new THREE.Vector3());
+  const q = camObj.getWorldQuaternion(new THREE.Quaternion());
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q); fwd.y = 0; fwd.normalize();
+  const to = pos.clone().sub(cam); to.y = 0; const dist = to.length(); to.normalize();
+  const ang = THREE.MathUtils.radToDeg(Math.atan2(fwd.x * to.z - fwd.z * to.x, fwd.dot(to))); // + = derecha
+  const dir = Math.abs(ang) < 30 ? 'delante' : Math.abs(ang) > 140 ? 'detrás' : ang > 0 ? 'a la derecha' : 'a la izquierda';
+  const m = code.match(/^(\d{2})([A-Z])(\d{2})$/);
+  const alt = m ? (m[2] === 'A' ? 'suelo' : 'nivel ' + m[2]) : '';
+  return { dist, text: `${dist.toFixed(1).replace('.', ',')} m ${dir} · ${alt}` };
+}
+function searchResults() {
+  // agrupa por hueco y ordena del más cercano al más lejano
+  const byLoc = new Map();
+  for (const h of lastHits) { if (!byLoc.has(h.loc)) byLoc.set(h.loc, []); byLoc.get(h.loc).push(h); }
+  return [...byLoc.entries()].map(([loc, items]) => ({ loc, items, w: whereIs(loc) }))
+    .sort((a, b) => (a.w ? a.w.dist : 1e9) - (b.w ? b.w.dist : 1e9));
+}
+// Balizas: una columna naranja encima de cada hueco encontrado, visible desde lejos
+const beacons = new THREE.Group(); almacen.add(beacons);
+const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffb000, transparent: true, opacity: 0.85, depthTest: false });
+function updateBeacons() {
+  beacons.clear();
+  const top = cfg.altoMontante + 0.5;
+  for (const loc of hits) {
+    const c = cellByLoc.get(loc); if (!c) continue;
+    const y0 = c.position.y, h = top - y0;
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, h, 8), beaconMat);
+    col.position.set(c.position.x, y0 + h / 2, c.position.z); col.renderOrder = 5;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 16).rotateX(Math.PI), beaconMat);
+    cone.position.set(c.position.x, top + 0.15, c.position.z); cone.renderOrder = 5;
+    beacons.add(col, cone);
+  }
+}
+// Panel de resultados (independiente del panel del hueco)
+const rcv = document.createElement('canvas'); rcv.width = PW; rcv.height = PH;
+const rctx = rcv.getContext('2d'), rtex = new THREE.CanvasTexture(rcv); rtex.colorSpace = THREE.SRGBColorSpace;
+const rpanel = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6 * PH / PW), new THREE.MeshBasicMaterial({ map: rtex, transparent: true, depthTest: false }));
+rpanel.renderOrder = 11; rpanel.visible = false; scene.add(rpanel);
+function placeInFront(obj, dist, dy, side) {
+  const cam = renderer.xr.getCamera(); const p = cam.getWorldPosition(new THREE.Vector3()), q = cam.getWorldQuaternion(new THREE.Quaternion());
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q); f.y = 0; f.normalize();
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  obj.position.copy(p).addScaledVector(f, dist).addScaledVector(r, side || 0); obj.position.y = p.y + dy; obj.lookAt(p);
+}
+function showXRResults(q) {
+  const res = searchResults();
+  if (!res.length) drawOn(rctx, rtex, 'No encontrado', `«${q}» no está en las estanterías ${cfg.estanterias.map((r) => r.id).join(' y ')}`, [{ text: 'Revisa la referencia o prueba con menos cifras.', color: '#bbb' }], 'Botón Y: buscar otra');
+  else drawOn(rctx, rtex, res.length === 1 ? 'Está en ' + res[0].loc : `En ${res.length} huecos`, `Búsqueda: ${q} · balizas naranjas encima`,
+    res.flatMap((r) => [{ text: `${r.loc}  ·  ${r.w ? r.w.text : ''}`, bold: true, color: '#ffb000' },
+      ...r.items.slice(0, 2).map((i) => ({ text: `   ${i.qty ? fmtN(i.qty) + ' ud · ' : ''}${i.ref}${i.desc ? ' · ' + i.desc : ''}` }))]),
+    'Botón X: quitar búsqueda · Y: buscar otra');
+  placeInFront(rpanel, 1.0, -0.15, -0.45); rpanel.visible = true;
+}
+function runSearch(q) {
+  $('q').value = q; $('q').oninput();
+  if (renderer.xr.isPresenting && !touchMode) showXRResults(q);
+}
+function clearSearch() { $('q').value = ''; $('xq').value = ''; $('q').oninput(); rpanel.visible = false; $('xrres').style.display = 'none'; }
+
+// Teclado virtual para las gafas (apuntar con el rayo y gatillo)
+const KEYS = [['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+  ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Ñ'], ['Z', 'X', 'C', 'V', 'B', 'N', 'M', '-', '_', '⌫'], ['BORRAR', 'BUSCAR', 'CERRAR']];
+const KW = 1024, KH = 660, KTOP = 130, KROW = 104;
+const kcv = document.createElement('canvas'); kcv.width = KW; kcv.height = KH;
+const kctx = kcv.getContext('2d'), ktex = new THREE.CanvasTexture(kcv); ktex.colorSpace = THREE.SRGBColorSpace;
+const kpad = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75 * KH / KW), new THREE.MeshBasicMaterial({ map: ktex, transparent: true, depthTest: false }));
+kpad.renderOrder = 12; kpad.visible = false; scene.add(kpad);
+let kText = '', kOpen = false, kHover = null;
+function keyRect(r, c) {
+  const n = KEYS[r].length, w = (KW - 24) / n;
+  return [12 + c * w + 4, KTOP + r * KROW + 4, w - 8, KROW - 8];
+}
+function keyAt(uv) {
+  const x = uv.x * KW, y = (1 - uv.y) * KH;
+  const r = Math.floor((y - KTOP) / KROW); if (r < 0 || r >= KEYS.length) return null;
+  const c = Math.floor((x - 12) / ((KW - 24) / KEYS[r].length)); return KEYS[r][c] ?? null;
+}
+function drawKeypad() {
+  const c = kctx; c.clearRect(0, 0, KW, KH);
+  c.fillStyle = 'rgba(22,22,26,.95)'; c.beginPath(); c.roundRect(2, 2, KW - 4, KH - 4, 26); c.fill();
+  c.fillStyle = '#fff'; c.beginPath(); c.roundRect(16, 16, KW - 32, 96, 14); c.fill();
+  c.textBaseline = 'middle'; c.textAlign = 'left'; c.font = 'bold 54px Arial';
+  c.fillStyle = kText ? '#111' : '#999'; c.fillText(kText ? kText + '|' : 'Referencia o ubicación…', 36, 66);
+  c.textAlign = 'center';
+  KEYS.forEach((row, r) => row.forEach((k, i) => {
+    const [x, y, w, h] = keyRect(r, i);
+    c.fillStyle = k === kHover ? '#ffb000' : k === 'BUSCAR' ? '#e30613' : '#3a3a42';
+    c.beginPath(); c.roundRect(x, y, w, h, 12); c.fill();
+    c.fillStyle = k === kHover ? '#111' : '#fff'; c.font = (k.length > 1 ? 'bold 40px' : 'bold 48px') + ' Arial'; c.fillText(k, x + w / 2, y + h / 2 + 2);
+  }));
+  ktex.needsUpdate = true;
+}
+function openKeypad() { kOpen = true; kHover = null; drawKeypad(); placeInFront(kpad, 0.8, -0.35, 0); kpad.visible = true; panel.visible = false; }
+function closeKeypad() { kOpen = false; kpad.visible = false; }
+function pressKey(k) {
+  if (!k) return;
+  if (k === '⌫') kText = kText.slice(0, -1);
+  else if (k === 'BORRAR') kText = '';
+  else if (k === 'CERRAR') { closeKeypad(); return; }
+  else if (k === 'BUSCAR') { if (kText.length < 2) return; closeKeypad(); runSearch(kText); return; }
+  else if (kText.length < 24) kText += k;
+  drawKeypad();
 }
 function drawCellPanel(code) {
   const { items, qty, val } = cellSummary(code);
@@ -442,10 +559,15 @@ function calibPoint(p) {
     almacen.rotation.y += Math.atan2(ez, ex); almacen.updateMatrixWorld();
     almacen.position.sub(new THREE.Vector3(ox, 0, oz).applyQuaternion(almacen.quaternion));
     almacen.visible = true; calib = 2; panel.visible = false; setMode(0);
-    if (touchMode) { touchMsg('Calibrado. Toca un hueco para ver qué contiene. Si no encaja, ajústalo con las flechas.'); $('xMark').style.display = 'none'; $('cross').style.display = 'none'; $('xrfine').style.display = 'grid'; reticle.visible = false; }
+    if (!touchMode) { drawOn(rctx, rtex, 'Calibrado', 'Apunta a un hueco para ver qué contiene', [
+      { text: 'Botón Y (mando izquierdo): buscar una referencia', bold: true, color: '#ffb000' }, { text: 'Botón X: quitar la búsqueda' },
+      { text: 'Botón A: cambiar vista · Botón B: recalibrar' }, { text: 'Joysticks: ajuste fino de posición y giro' }]);
+      placeInFront(rpanel, 1.0, -0.15, 0); rpanel.visible = true; setTimeout(() => { if (!hits.size) rpanel.visible = false; }, 9000); }
+    if (touchMode) { touchMsg('Calibrado. Toca un hueco para ver qué contiene, o escribe una referencia arriba y pulsa «Buscar». Si no encaja, ajústalo con las flechas.'); $('xMark').style.display = 'none'; $('cross').style.display = 'none'; $('xrfine').style.display = 'grid'; reticle.visible = false; }
   }
 }
 function onTrigger(c, g) {
+  if (kOpen) { pressKey(kHover); return; }
   if (calib < 2) {
     if (touchMode) return; // en la tablet se calibra con el botón «Marcar punto»
     const p = g.getWorldPosition(new THREE.Vector3()); p.y = 0; calibPoint(p); return;
@@ -470,7 +592,22 @@ $('xMark').onclick = () => {
 $('xRecal').onclick = () => { calib = 0; almacen.visible = false; select(null); $('xMark').style.display = ''; $('cross').style.display = 'block'; $('xrfine').style.display = 'none'; touchInstructions(); };
 $('xMode').onclick = () => setMode((mode + 1) % MODES.length);
 $('xExit').onclick = () => renderer.xr.getSession()?.end();
-$('xq').oninput = () => { $('q').value = $('xq').value; $('q').oninput(); };
+$('xq').oninput = () => { clearTimeout(window.__xqT); window.__xqT = setTimeout(() => { $('q').value = $('xq').value; $('q').oninput(); }, 350); };
+$('xq').onkeydown = (e) => { if (e.key === 'Enter') { $('q').value = $('xq').value; $('q').oninput(); $('xq').blur(); } };
+$('xFind').onclick = () => { if ($('xq').value.trim().length >= 2) { $('q').value = $('xq').value; $('q').oninput(); $('xq').blur(); } else $('xq').focus(); };
+function renderTouchResults(q) {
+  const box = $('xrres');
+  if (!q || q.length < 2) { box.style.display = 'none'; return; }
+  const res = searchResults();
+  box.style.display = 'block';
+  box.innerHTML = !res.length ? `<b style="color:#ffb000">No encontrado</b><br>«${esc(q)}» no está en estas estanterías.`
+    : `<div style="opacity:.75">${res.length === 1 ? 'Está en' : 'Está en ' + res.length + ' huecos'} · mira las balizas naranjas</div>` +
+      res.slice(0, 30).map((r) => `<div class="r" data-l="${r.loc}"><b>${r.loc}</b> · ${calib === 2 && r.w ? r.w.text : ''}<br>` +
+        r.items.slice(0, 3).map((i) => `${i.qty ? fmtN(i.qty) + ' ud · ' : ''}${esc(i.ref)}${i.desc ? ' · ' + esc(i.desc) : ''}`).join('<br>') + '</div>').join('') +
+      `<div style="margin-top:6px"><button id="xClr" class="sec">Quitar búsqueda</button></div>`;
+  box.querySelectorAll('.r').forEach((d) => (d.onclick = () => select(cellByLoc.get(d.dataset.l) || null)));
+  const b = $('xClr'); if (b) b.onclick = clearSearch;
+}
 $('xrfine').querySelectorAll('button').forEach((b) => (b.onclick = () => {
   const f = b.dataset.f, step = 0.02, rot = THREE.MathUtils.degToRad(0.25);
   if (f === 'rl') almacen.rotation.y += rot; else if (f === 'rr') almacen.rotation.y -= rot;
@@ -478,7 +615,7 @@ $('xrfine').querySelectorAll('button').forEach((b) => (b.onclick = () => {
     almacen.position.add(new THREE.Vector3(v[0], 0, v[1]).applyQuaternion(almacen.quaternion)); }
 }));
 // Los toques sobre botones, buscador o ficha no deben seleccionar huecos
-$('xrui').addEventListener('beforexrselect', (e) => { if (e.target.closest('button,input,#xrinfo,.msg')) e.preventDefault(); });
+$('xrui').addEventListener('beforexrselect', (e) => { if (e.target.closest('button,input,#xrinfo,#xrres,.msg')) e.preventDefault(); });
 const tmpM = new THREE.Matrix4();
 function rayHit(c) {
   tmpM.identity().extractRotation(c.matrixWorld);
@@ -505,8 +642,21 @@ function handleXRInput(dt) {
       if (b(4) && !lastBtn[key + 4] && calib === 2) setMode((mode + 1) % MODES.length); // A: vista
       if (b(5) && !lastBtn[key + 5]) { calib = 0; almacen.visible = false; select(null); instructions(); } // B: recalibrar
     }
-    if (hand === 'left' && b(4) && !lastBtn[key + 4]) { hits = new Set(); $('q').value = ''; refreshCells(); } // X: borrar búsqueda
+    if (hand === 'left' && b(4) && !lastBtn[key + 4]) clearSearch(); // X: quitar búsqueda
+    if (hand === 'left' && b(5) && !lastBtn[key + 5] && calib === 2) (kOpen ? closeKeypad() : openKeypad()); // Y: buscar referencia
     lastBtn[key + 4] = b(4); lastBtn[key + 5] = b(5);
+  }
+  if (kOpen) {
+    let k = null;
+    for (const { c } of ctrls) {
+      tmpM.identity().extractRotation(c.matrixWorld);
+      ray.ray.origin.setFromMatrixPosition(c.matrixWorld); ray.ray.direction.set(0, 0, -1).applyMatrix4(tmpM);
+      const h = ray.intersectObject(kpad, false)[0];
+      c.userData.line.scale.z = h ? h.distance : 8;
+      if (h && h.uv) k = keyAt(h.uv) || k;
+    }
+    if (k !== kHover) { kHover = k; drawKeypad(); }
+    return;
   }
   if (calib === 2 && !touchMode) {
     let best = null;
@@ -567,6 +717,7 @@ window.__almacen = { stock, cells, cellByLoc, cfg, select, setMode };
 const clock = new THREE.Clock();
 renderer.setAnimationLoop((t, frame) => {
   const dt = Math.min(clock.getDelta(), 0.1);
+  if (hits.size) { const k = 0.5 + 0.35 * Math.sin(t / 200); M.hit.opacity = k; beaconMat.opacity = 0.55 + 0.4 * Math.sin(t / 200); }
   if (frame && hitSource && calib < 2) {
     const r = frame.getHitTestResults(hitSource);
     const pose = r.length ? r[0].getPose(renderer.xr.getReferenceSpace()) : null;
