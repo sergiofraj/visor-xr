@@ -34,6 +34,7 @@
   <button id="btnAR">Entrar en realidad mixta</button>
   <button id="btnScale" class="sec">Escala: 1:1</button>
   <button id="btnRot" class="sec">Girar 90°</button>
+  <button id="btnLook" class="sec">Vista: sólido</button>
 </div>
 <div id="load">Cargando modelo…</div>
 <div id="xrui">
@@ -363,6 +364,7 @@ function cycleLook() {
   modelRoot?.traverse((o) => { if (!o.isMesh) return;
     for (const m of [].concat(o.material)) { m.transparent = look === 1; m.opacity = look === 1 ? 0.5 : 1; m.wireframe = look === 2; m.depthWrite = look !== 1; m.needsUpdate = true; } });
   $x('xLook').textContent = 'Vista: ' + LOOKS[look];
+  $x('btnLook').textContent = 'Vista: ' + LOOKS[look];
 }
 // Botones de la tablet
 $x('xPlace').onclick = () => { ovEnd(); shadowFloor.visible = true; msg('Toca la pantalla para dejar el modelo donde está el círculo rojo.'); $x('cross').style.display = 'block'; };
@@ -370,6 +372,7 @@ $x('xOver').onclick = ovStart;
 $x('xMark').onclick = () => { if (!reticle.visible) { msg('Todavía no se ve el suelo: mueve la tablet despacio apuntando al suelo hasta que salga el círculo rojo.'); return; } ovMark(new THREE.Vector3().setFromMatrixPosition(reticle.matrix)); };
 $x('xFlip').onclick = () => { if (ov.done) { ov.flip *= -1; ovApply(); } else rotate(Math.PI); };
 $x('xLook').onclick = cycleLook;
+$x('btnLook').onclick = cycleLook;
 $x('xExit').onclick = () => renderer.xr.getSession()?.end();
 $x('xrfine').querySelectorAll('button').forEach((b) => (b.onclick = () => {
   const f = b.dataset.f, st = 0.02, r = THREE.MathUtils.degToRad(0.25);
